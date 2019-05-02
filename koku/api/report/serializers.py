@@ -212,6 +212,8 @@ class OrderSerializer(BaseSerializer):
                                            required=False)
     delta = serializers.ChoiceField(choices=ORDER_CHOICES,
                                     required=False)
+    tag = serializers.ChoiceField(choices=ORDER_CHOICES,
+                                  required=False)
 
 
 class ParamSerializer(BaseSerializer):

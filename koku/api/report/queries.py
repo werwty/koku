@@ -1267,6 +1267,13 @@ class ReportQueryHandler(QueryHandler):
             if field in numeric_ordering:
                 sorted_data = sorted(sorted_data, key=lambda entry: (entry[field] is None, entry[field]),
                                      reverse=reverse)
+            elif field == 'tag':
+                tag_vals = [tag.split(':')[-1] for tag in self._tag_keys]
+                data_keys = sorted_data[0].keys()
+                tags_to_sort = set(tag_vals).intersection(data_keys)
+                for tag in tags_to_sort:
+                    sorted_data = sorted(sorted_data, key=lambda entry: entry[tag].lower(),
+                                         reverse=reverse)
             else:
                 sorted_data = sorted(sorted_data, key=lambda entry: entry[field].lower(),
                                      reverse=reverse)
