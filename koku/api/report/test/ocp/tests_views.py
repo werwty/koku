@@ -563,9 +563,9 @@ class OCPReportViewTest(IamTestCase):
                 .filter(usage_start__date__gte=self.dh.this_month_start)\
                 .aggregate(
                     total=Sum(
-                        F('pod_charge_cpu_core_hours') +  # noqa: W504
-                        F('pod_charge_memory_gigabyte_hours') +  # noqa: W504
-                        F('persistentvolumeclaim_charge_gb_month') +  # noqa: W504
+                        F('pod_derived_cost_cpu_core_hours') +  # noqa: W504
+                        F('pod_derived_cost_memory_gigabyte_hours') +  # noqa: W504
+                        F('persistentvolumeclaim_derived_cost_gb_month') +  # noqa: W504
                         F('project_infra_cost')
                     )
                 ).get('total')
@@ -603,9 +603,9 @@ class OCPReportViewTest(IamTestCase):
                 .filter(usage_start__date__gte=this_month_start)\
                 .aggregate(
                     total=Sum(
-                        F('pod_charge_cpu_core_hours') +  # noqa: W504
-                        F('pod_charge_memory_gigabyte_hours') +  # noqa: W504
-                        F('persistentvolumeclaim_charge_gb_month') +  # noqa: W504
+                        F('pod_derived_cost_cpu_core_hours') +  # noqa: W504
+                        F('pod_derived_cost_memory_gigabyte_hours') +  # noqa: W504
+                        F('persistentvolumeclaim_derived_cost_gb_month') +  # noqa: W504
                         F('infra_cost')
                     )
                 ).get('total')
@@ -617,9 +617,9 @@ class OCPReportViewTest(IamTestCase):
                 .values(*['date'])\
                 .annotate(
                     total=Sum(
-                        F('pod_charge_cpu_core_hours') +  # noqa: W504
-                        F('pod_charge_memory_gigabyte_hours') +  # noqa: W504
-                        F('persistentvolumeclaim_charge_gb_month') +  # noqa: W504
+                        F('pod_derived_cost_cpu_core_hours') +  # noqa: W504
+                        F('pod_derived_cost_memory_gigabyte_hours') +  # noqa: W504
+                        F('persistentvolumeclaim_derived_cost_gb_month') +  # noqa: W504
                         F('infra_cost')
                     )
                 )
@@ -631,9 +631,9 @@ class OCPReportViewTest(IamTestCase):
                 .values(*['date'])\
                 .annotate(
                     total=Sum(
-                        F('pod_charge_cpu_core_hours') +  # noqa: W504
-                        F('pod_charge_memory_gigabyte_hours') +  # noqa: W504
-                        F('persistentvolumeclaim_charge_gb_month') +  # noqa: W504
+                        F('pod_derived_cost_cpu_core_hours') +  # noqa: W504
+                        F('pod_derived_cost_memory_gigabyte_hours') +  # noqa: W504
+                        F('persistentvolumeclaim_derived_cost_gb_month') +  # noqa: W504
                         F('infra_cost')
                     )
                 )
@@ -986,7 +986,7 @@ class OCPReportViewTest(IamTestCase):
                         'usage': Sum('pod_usage_cpu_core_hours'),
                         'request': Sum('pod_request_cpu_core_hours'),
                         'limit': Sum('pod_limit_cpu_core_hours'),
-                        'cost': Sum('pod_charge_cpu_core_hours')
+                        'cost': Sum('pod_derived_cost_cpu_core_hours')
                     }
                 )
 
@@ -1023,9 +1023,9 @@ class OCPReportViewTest(IamTestCase):
             totals = CostSummary.objects\
                 .filter(usage_start__gte=self.ten_days_ago)\
                 .filter(**{f'pod_labels__{filter_key}': filter_value})\
-                .aggregate(cost=Sum(F('pod_charge_cpu_core_hours')                 # noqa: W503
-                                    + F('pod_charge_memory_gigabyte_hours')        # noqa: W503
-                                    + F('persistentvolumeclaim_charge_gb_month')   # noqa: W503
+                .aggregate(cost=Sum(F('pod_derived_cost_cpu_core_hours')                 # noqa: W503
+                                    + F('pod_derived_cost_memory_gigabyte_hours')        # noqa: W503
+                                    + F('persistentvolumeclaim_derived_cost_gb_month')   # noqa: W503
                                     + F('infra_cost')))                            # noqa: W503
 
         url = reverse('reports-openshift-costs')
@@ -1058,7 +1058,7 @@ class OCPReportViewTest(IamTestCase):
                         'usage': Sum('pod_usage_cpu_core_hours'),
                         'request': Sum('pod_request_cpu_core_hours'),
                         'limit': Sum('pod_limit_cpu_core_hours'),
-                        'derived_cost': Sum('pod_charge_cpu_core_hours')
+                        'derived_cost': Sum('pod_derived_cost_cpu_core_hours')
                     }
                 )
 

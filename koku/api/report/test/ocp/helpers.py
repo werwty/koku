@@ -413,13 +413,13 @@ class OCPReportDataGenerator:
             mem_request = entry.pod_request_memory_gigabyte_hours
             mem_charge = max(float(mem_usage), float(mem_request)) * 0.25
 
-            entry.pod_charge_memory_gigabyte_hours = mem_charge
+            entry.pod_derived_cost_memory_gigabyte_hours = mem_charge
 
             cpu_usage = entry.pod_usage_cpu_core_hours
             cpu_request = entry.pod_request_cpu_core_hours
             cpu_charge = max(float(cpu_usage), float(cpu_request)) * 0.50
 
-            entry.pod_charge_cpu_core_hours = cpu_charge
+            entry.pod_derived_cost_cpu_core_hours = cpu_charge
 
             entry.save()
 
@@ -431,7 +431,7 @@ class OCPReportDataGenerator:
             storage_request = entry.volume_request_storage_gigabyte_months
             storage_charge = float(storage_usage + storage_request) * 0.25
 
-            entry.persistentvolumeclaim_charge_gb_month = storage_charge
+            entry.persistentvolumeclaim_derived_cost_gb_month = storage_charge
 
             entry.save()
 
@@ -449,11 +449,11 @@ class OCPReportDataGenerator:
             'pod_labels',
         ]
         usage_annotations = {
-            'pod_charge_cpu_core_hours': Coalesce(F('pod_charge_cpu_core_hours'), Decimal(0)),
-            'pod_charge_memory_gigabyte_hours': Coalesce(F('pod_charge_memory_gigabyte_hours'), Decimal(0)),
-            'infra_cost': Coalesce(F('pod_charge_memory_gigabyte_hours'), Decimal(0)),
-            'project_infra_cost': Coalesce(F('pod_charge_memory_gigabyte_hours'), Decimal(0)),
-            'persistentvolumeclaim_charge_gb_month': Coalesce(F('pod_charge_memory_gigabyte_hours'), Decimal(0)),
+            'pod_derived_cost_cpu_core_hours': Coalesce(F('pod_derived_cost_cpu_core_hours'), Decimal(0)),
+            'pod_derived_cost_memory_gigabyte_hours': Coalesce(F('pod_derived_cost_memory_gigabyte_hours'), Decimal(0)),
+            'infra_cost': Coalesce(F('pod_derived_cost_memory_gigabyte_hours'), Decimal(0)),
+            'project_infra_cost': Coalesce(F('pod_derived_cost_memory_gigabyte_hours'), Decimal(0)),
+            'persistentvolumeclaim_derived_cost_gb_month': Coalesce(F('pod_derived_cost_memory_gigabyte_hours'), Decimal(0)),
         }
 
         usage_entries = OCPUsageLineItemDailySummary.objects.values(*included_fields).annotate(**usage_annotations)

@@ -228,6 +228,12 @@ class OCPUsageLineItemDaily(models.Model):
         null=True
     )
 
+    pod_derived_cost_cpu_core_seconds = models.DecimalField(
+        max_digits=24,
+        decimal_places=6,
+        null=True
+    )
+
     pod_usage_memory_byte_seconds = models.DecimalField(
         max_digits=24,
         decimal_places=6,
@@ -241,6 +247,12 @@ class OCPUsageLineItemDaily(models.Model):
     )
 
     pod_limit_memory_byte_seconds = models.DecimalField(
+        max_digits=24,
+        decimal_places=6,
+        null=True
+    )
+
+    pod_derived_cost_memory_byte_seconds = models.DecimalField(
         max_digits=24,
         decimal_places=6,
         null=True
@@ -370,7 +382,7 @@ class OCPUsageLineItemDailySummary(models.Model):
         null=True
     )
 
-    pod_charge_cpu_core_hours = models.DecimalField(
+    pod_derived_cost_cpu_core_hours = models.DecimalField(
         max_digits=24,
         decimal_places=6,
         null=True
@@ -388,7 +400,7 @@ class OCPUsageLineItemDailySummary(models.Model):
         null=True
     )
 
-    pod_charge_memory_gigabyte_hours = models.DecimalField(
+    pod_derived_cost_memory_gigabyte_hours = models.DecimalField(
         max_digits=24,
         decimal_places=6,
         null=True
@@ -574,6 +586,12 @@ class OCPStorageLineItemDaily(models.Model):
         null=True
     )
 
+    persistentvolumeclaim_derived_cost_byte_seconds = models.DecimalField(
+        max_digits=24,
+        decimal_places=6,
+        null=True
+    )
+
     total_seconds = models.IntegerField()
 
     persistentvolume_labels = JSONField(null=True)
@@ -659,7 +677,7 @@ class OCPStorageLineItemDailySummary(models.Model):
         null=True
     )
 
-    persistentvolumeclaim_charge_gb_month = models.DecimalField(
+    persistentvolumeclaim_derived_cost_gb_month = models.DecimalField(
         max_digits=24,
         decimal_places=6,
         null=True

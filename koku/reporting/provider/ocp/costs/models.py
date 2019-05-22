@@ -43,19 +43,19 @@ class CostSummary(models.Model):
     usage_start = models.DateTimeField(null=False)
     usage_end = models.DateTimeField(null=False)
 
-    pod_charge_cpu_core_hours = models.DecimalField(
+    pod_derived_cost_cpu_core_hours = models.DecimalField(
         max_digits=24,
         decimal_places=6,
         null=True
     )
 
-    pod_charge_memory_gigabyte_hours = models.DecimalField(
+    pod_derived_cost_memory_gigabyte_hours = models.DecimalField(
         max_digits=24,
         decimal_places=6,
         null=True
     )
 
-    persistentvolumeclaim_charge_gb_month = models.DecimalField(
+    persistentvolumeclaim_derived_cost_gb_month = models.DecimalField(
         max_digits=24,
         decimal_places=6,
         null=True
