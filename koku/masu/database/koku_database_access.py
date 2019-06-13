@@ -18,11 +18,8 @@
 
 import logging
 
-import sqlalchemy
-from sqlalchemy.ext.automap import automap_base
-from sqlalchemy.orm import scoped_session, sessionmaker
-
 from masu.database.engine import DB_ENGINE
+from django.db import transaction
 
 LOG = logging.getLogger(__name__)
 
@@ -39,25 +36,25 @@ class KokuDBAccess:
             schema       (String) database schema (i.e. public or customer tenant value)
         """
         self.schema = schema
-        self._db = DB_ENGINE
-        self._meta = self._create_metadata()
-        self._session_factory = sessionmaker(bind=self._db)
-        self._session_registry = scoped_session(self._session_factory)
-        self._session = self._create_session()
-        self._base = self._prepare_base()
+        # self._db = DB_ENGINE
+        # self._meta = self._create_metadata()
+        # self._session_factory = sessionmaker(bind=self._db)
+        # self._session_registry = scoped_session(self._session_factory)
+        # self._session = self._create_session()
+        # self._base = self._prepare_base()
+        self._savepoint = None
 
     def __enter__(self):
         """Context manager entry."""
-        self._session.begin_nested()
+        self._savepoint = transaction.savepoint()
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
         """Context manager close session."""
         if exception_type:
-            self._session.rollback()
+            transaction.savepoint_rollback(self._savepoint)
         else:
-            self._session.commit()
-        self.close_session()
+            transaction.savepoint_commit(self._savepoint)
 
     def _create_metadata(self):
         """Create database metadata to for a specific schema.
@@ -149,6 +146,8 @@ class KokuDBAccess:
             return obj.filter_by(**filter_args)
         return obj
 
+    # TODO: Figure out if this is necessary once the django lower level access is sorted out.
+    # Until then put this in the child classes
     def does_db_entry_exist(self):
         """
         Return status for the existance of an object in the database.
