@@ -18,7 +18,7 @@
 """Test the ProviderDBAuthAccessor utility object."""
 
 from masu.database.provider_auth_db_accessor import ProviderAuthDBAccessor
-from tests import MasuTestCase
+from masu.tests import MasuTestCase
 
 class ProviderDBAuthAccessorTest(MasuTestCase):
     """Test Cases for the ProviderDBAuthAccessor object."""

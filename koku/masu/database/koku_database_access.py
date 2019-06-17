@@ -18,8 +18,8 @@
 
 import logging
 
-from masu.database.engine import DB_ENGINE
-from django.db import transaction
+from django.db import transaction, IntegrityError
+from tenant_schemas.utils import schema_context
 
 LOG = logging.getLogger(__name__)
 
@@ -51,86 +51,11 @@ class KokuDBAccess:
 
     def __exit__(self, exception_type, exception_value, traceback):
         """Context manager close session."""
-        if exception_type:
-            transaction.savepoint_rollback(self._savepoint)
-        else:
-            transaction.savepoint_commit(self._savepoint)
-
-    def _create_metadata(self):
-        """Create database metadata to for a specific schema.
-
-        Args:
-            None
-        Returns:
-            (sqlalchemy.sql.schema.MetaData): "SQLAlchemy engine metadata"
-
-        """
-        return sqlalchemy.MetaData(bind=self._db, schema=self.schema)
-
-    def _create_session(self):
-        """Use a sessionmaker factory to create a scoped session."""
-        return self._session_registry()
-
-    def close_session(self):
-        """Close the database session."""
-        self._session.close()
-
-    def _prepare_base(self):
-        """
-        Prepare base classes.
-
-        Args:
-            None
-        Returns:
-            (sqlalchemy.ext.declarative.api.DeclarativeMeta): "Declaritive metadata object",
-        """
-        base = automap_base(metadata=self.get_meta())
-        base.prepare(self.get_engine(), reflect=True)
-        return base
-
-    def get_base(self):
-        """
-        Return the base classes.
-
-        Args:
-            None
-        Returns:
-            (sqlalchemy.ext.declarative.api.DeclarativeMeta): "Declaritive metadata object",
-        """
-        return self._base
-
-    def get_session(self):
-        """
-        Return Koku database connection session.
-
-        Args:
-            None
-        Returns:
-            (sqlalchemy.orm.session.Session): "SQLAlchemy Session object",
-        """
-        return self._session
-
-    def get_engine(self):
-        """
-        Return Koku database connection engine.
-
-        Args:
-            None
-        Returns:
-            (sqlalchemy.engine.base.Engine): "SQLAlchemy engine object",
-        """
-        return self._db
-
-    def get_meta(self):
-        """
-        Return Koku database metadata connection.
-
-        Args:
-            None
-        Returns:
-            (sqlalchemy.engine.base.MetaData): "SQLAlchemy metadata object",
-        """
-        return self._meta
+        with schema_context(self.schema):
+            if exception_type:
+                transaction.savepoint_rollback(self._savepoint)
+            else:
+                transaction.savepoint_commit(self._savepoint)
 
     def _get_db_obj_query(self, **filter_args):
         """
@@ -141,50 +66,45 @@ class KokuDBAccess:
         Returns:
             (sqlalchemy.orm.query.Query): "SELECT public.api_customer.group_ptr_id ..."
         """
-        obj = self._session.query(self._table)
-        if filter_args:
-            return obj.filter_by(**filter_args)
-        return obj
+        with schema_context(self.schema):
+            obj = self._table.objects.all()
+            if filter_args:
+                obj = obj.filter(**filter_args)
+            return obj
 
-    # TODO: Figure out if this is necessary once the django lower level access is sorted out.
-    # Until then put this in the child classes
     def does_db_entry_exist(self):
         """
-        Return status for the existance of an object in the database.
+        Return status for the existence of an object in the database.
 
         Args:
             None
         Returns:
             (Boolean): "True/False",
         """
-        return bool(self._get_db_obj_query().first())
+        with schema_context(self.schema):
+            return self._get_db_obj_query().exists()
 
-    def add(self, use_savepoint=True, **kwargs):
+    def add(self, **kwargs):
         """
         Add a new row to this table.
 
         Args:
-            use_savepoint (bool) whether a transaction savepoint should be used
             kwargs (Dictionary): Fields containing table attributes.
 
         Returns:
             (Object): new model object
 
         """
-        new_entry = self._table(**kwargs)
-        if use_savepoint:
-            self.savepoint(self._session.add, new_entry)
-        else:
-            self._session.add(new_entry)
-        return new_entry
+        with schema_context(self.schema):
+            new_entry = self._table.objects.create(**kwargs)
+            return new_entry
 
-    def delete(self, obj=None, use_savepoint=True):
+    def delete(self, obj=None):
         """
         Delete our object from the database.
 
         Args:
             obj (object) model object to delete
-            use_savepoint (bool) whether a transaction savepoint should be used
         Returns:
             None
         """
@@ -192,22 +112,9 @@ class KokuDBAccess:
             deleteme = obj
         else:
             deleteme = self._obj
+        with schema_context(self.schema):
+            deleteme.delete()
 
-        if use_savepoint:
-            self.savepoint(self._session.delete, deleteme)
-        else:
-            self._session.delete(deleteme)
-
-    def commit(self):
-        """
-        Commit pending database changes.
-
-        Args:
-            None
-        Returns:
-            None
-        """
-        self._session.commit()
 
     def savepoint(self, func, *args, **kwargs):
         """Wrap a db access function in a savepoint block.
@@ -223,10 +130,12 @@ class KokuDBAccess:
             None
 
         """
-        try:
-            with self._session.begin_nested():
+        with schema_context(self.schema):
+            try:
+                savepoint = transaction.savepoint()
                 func(*args, **kwargs)
-            self._session.commit()
-        except sqlalchemy.exc.IntegrityError as exc:
-            LOG.warning('query transaction failed: %s', exc)
-            self._session.rollback()
+                transaction.savepoint_commit(savepoint)
+
+            except IntegrityError as exc:
+                LOG.warning('query transaction failed: %s', exc)
+                transaction.savepoint_rollback(savepoint)
