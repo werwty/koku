@@ -23,12 +23,12 @@ import pkgutil
 import uuid
 
 from masu.config import Config
-from masu.database import AWS_CUR_TABLE_MAP
 from masu.database.report_db_accessor_base import ReportDBAccessorBase
 from masu.external.date_accessor import DateAccessor
 
 LOG = logging.getLogger(__name__)
 
+from reporting.models import AWSCostEntryBill
 
 # pylint: disable=too-many-public-methods
 class AWSReportDBAccessor(ReportDBAccessorBase):
@@ -49,10 +49,10 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
 
     def get_cost_entry_bills(self):
         """Get all cost entry bill objects."""
-        table_name = AWS_CUR_TABLE_MAP['bill']
+        table = AWSCostEntryBill
 
         columns = ['id', 'bill_type', 'payer_account_id', 'billing_period_start', 'provider_id']
-        bills = self._get_db_obj_query(table_name, columns=columns).all()
+        bills = self._get_db_obj_query(table).values(*columns)
 
         return {(bill.bill_type, bill.payer_account_id,
                  bill.billing_period_start, bill.provider_id): bill.id
@@ -60,17 +60,17 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
 
     def get_cost_entry_bills_by_date(self, start_date):
         """Return a cost entry bill for the specified start date."""
-        table_name = AWS_CUR_TABLE_MAP['bill']
-        return self._get_db_obj_query(table_name)\
-            .filter_by(billing_period_start=start_date)\
-            .all()
+        table = AWSCostEntryBill
+
+        return self._get_db_obj_query(table)\
+            .filter(billing_period_start=start_date)
 
     # pylint: disable=invalid-name
     def get_cost_entry_bills_query_by_provider(self, provider_id):
         """Return all cost entry bills for the specified provider."""
-        table_name = AWS_CUR_TABLE_MAP['bill']
-        return self._get_db_obj_query(table_name)\
-            .filter_by(provider_id=provider_id)
+        table = AWSCostEntryBill
+        return self._get_db_obj_query(table)\
+            .filter(provider_id=provider_id)
 
     def bills_for_provider_id(self, provider_id, start_date=None):
         """Return all cost entry bills for provider_id on date."""
@@ -78,17 +78,17 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
         if start_date:
             bill_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')\
                 .replace(day=1).date()
-            bills = bills.filter_by(billing_period_start=bill_date).all()
+            bills = bills.filter(billing_period_start=bill_date)
         return bills
 
     def get_bill_query_before_date(self, date):
         """Get the cost entry bill objects with billing period before provided date."""
-        table_name = AWS_CUR_TABLE_MAP['bill']
+        table = AWSCostEntryBill
         billing_start = getattr(
-            getattr(self.report_schema, table_name),
+            getattr(self.report_schema, table),
             'billing_period_start'
         )
-        base_query = self._get_db_obj_query(table_name)
+        base_query = self._get_db_obj_query(table)
         cost_entry_bill_query = base_query.filter(billing_start <= date)
         return cost_entry_bill_query
 

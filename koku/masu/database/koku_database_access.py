@@ -67,10 +67,10 @@ class KokuDBAccess:
             (sqlalchemy.orm.query.Query): "SELECT public.api_customer.group_ptr_id ..."
         """
         with schema_context(self.schema):
-            obj = self._table.objects.all()
+            queryset = self._table.objects.all()
             if filter_args:
-                obj = obj.filter(**filter_args)
-            return obj
+                queryset = queryset.filter(**filter_args)
+            return queryset
 
     def does_db_entry_exist(self):
         """
@@ -114,7 +114,6 @@ class KokuDBAccess:
             deleteme = self._obj
         with schema_context(self.schema):
             deleteme.delete()
-
 
     def savepoint(self, func, *args, **kwargs):
         """Wrap a db access function in a savepoint block.

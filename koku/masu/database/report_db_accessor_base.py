@@ -21,7 +21,8 @@ import uuid
 from decimal import Decimal, InvalidOperation
 
 import psycopg2
-from sqlalchemy.dialects.postgresql import insert
+
+import django.apps
 
 from masu.config import Config
 from masu.database.koku_database_access import KokuDBAccess
