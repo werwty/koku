@@ -39,7 +39,7 @@ class ReportSchema:
         self.column_types = {}
         self._set_reporting_tables(tables, column_map)
 
-    def _set_reporting_tables(self, tables, column_map):
+    def _set_reporting_tables(self, models, column_map):
         """Load table objects for reference and creation.
 
         Args:
@@ -49,14 +49,14 @@ class ReportSchema:
 
         """
         column_types = {}
-        for table in tables:
-            if 'django' in table.__name__:
+        for model in models:
+            if 'django' in model._meta.db_table:
                 continue
-            setattr(self, table.__name__, table)
-            columns = column_map[table.__name__].values()
-            types = {column: getattr(table, column).type.python_type
+            setattr(self, model._meta.db_table, model)
+            columns = column_map[model._meta.db_table].values()
+            types = {column: model._meta.get_field(column).get_internal_type()
                      for column in columns}
-            column_types.update({table.__name__: types})
+            column_types.update({model._meta.db_table: types})
             self.column_types = column_types
 
 
@@ -73,10 +73,8 @@ class ReportDBAccessorBase(KokuDBAccess):
         """
         super().__init__(schema)
         self.column_map = column_map
-        self.report_schema = ReportSchema(self.get_base().classes,
+        self.report_schema = ReportSchema(django.apps.apps.get_models(),
                                           self.column_map)
-        self._session = self.get_session()
-        self._conn = self._db.connect()
         self._pg2_conn = self._get_psycopg2_connection()
         self._cursor = self._get_psycopg2_cursor()
 
@@ -225,28 +223,34 @@ class ReportDBAccessorBase(KokuDBAccess):
         else:
             self._cursor.close()
             self._pg2_conn.close()
-            self._conn.close()
 
     # pylint: disable=arguments-differ
-    def _get_db_obj_query(self, table_name, columns=None):
+    def _get_db_obj_query(self, table, columns=None):
         """Return a query on a specific database table.
 
         Args:
-            table_name (str): Which table to query
+            table (DjangoModel): Which table to query
             columns (list): A list of column names to exclusively return
 
         Returns:
             (Query): A SQLAlchemy query object
 
         """
-        table = getattr(self.report_schema, table_name)
-        if columns:
-            entities = [getattr(table, column) for column in columns]
-            query = self._session.query(table).with_entities(*entities)
-        else:
-            query = self._session.query(table)
+        with schema_context(self.schema):
 
-        return query
+            if isinstance(table, str):
+                table_name=table
+            else:
+                table_name = getattr(self.report_schema, table._meta.db_table)
+            import ipdb; ipdb.set_trace()
+            model = getattr(self.report_schema, table_name)
+            query = model.objects.all()
+
+            if columns:
+                entities = [getattr(table_name, column) for column in columns]
+                query = model.values(*entities)
+
+            return query
 
     def create_db_object(self, table_name, data):
         """Instantiate a populated database object.
@@ -260,10 +264,10 @@ class ReportDBAccessorBase(KokuDBAccess):
 
         """
         # pylint: disable=invalid-name
-        Table = getattr(self.report_schema, table_name)
+        table = getattr(self.report_schema, table_name)
         data = self.clean_data(data, table_name)
 
-        return Table(**data)
+        return table(**data)
 
     def insert_on_conflict_do_nothing(self,
                                       table_name,
@@ -272,7 +276,7 @@ class ReportDBAccessorBase(KokuDBAccess):
         """Write an INSERT statement with an ON CONFLICT clause.
 
         This is useful to avoid duplicate row inserts. Intended for
-        singl row inserts.
+        single row inserts.
 
         Args:
             table_name (str): The name of the table to insert into
@@ -285,13 +289,15 @@ class ReportDBAccessorBase(KokuDBAccess):
         """
         data = self.clean_data(data, table_name)
         table = getattr(self.report_schema, table_name)
-        statement = insert(table).values(**data)
+        data_formatted = ','.join(data)
 
-        result = self._conn.execute(
-            statement.on_conflict_do_nothing(index_elements=conflict_columns)
-        )
-        if result.inserted_primary_key:
-            return result.inserted_primary_key[0]
+        conflict_columns_formatted = ','.join(data)
+        insert_sql = f"""
+                    INSERT INTO {table} ({data_formatted})                       
+                        ON CONFLICT ({conflict_columns_formatted}) DO NOTHING
+                """
+        self._cursor.execute(insert_sql)
+        self._pg2_conn.commit()
 
         if conflict_columns:
             data = {key: value for key, value in data.items()
@@ -322,17 +328,19 @@ class ReportDBAccessorBase(KokuDBAccess):
         data = self.clean_data(data, table_name)
         set_data = {key: value for key, value in data.items()
                     if key in set_columns}
+        formatted_set = ", ".join("{} = {}".format(key, value) for key, value in set_data.items())
         table = getattr(self.report_schema, table_name)
-        statement = insert(table).values(**data)
 
-        result = self._conn.execute(
-            statement.on_conflict_do_update(
-                index_elements=conflict_columns,
-                set_=set_data
-            )
-        )
-        if result.inserted_primary_key:
-            return result.inserted_primary_key[0]
+        data_formatted = ','.join(str(x) for x in data.values())
+        conflict_columns_formatted = ','.join(data)
+
+        insert_sql = f"""
+        INSERT INTO {table} ({data_formatted})  
+        ON CONFLICT ({conflict_columns_formatted}) DO UPDATE SET 
+        ({formatted_set})
+        """
+        self._cursor.execute(insert_sql)
+        self._pg2_conn.commit()
 
         data = {key: value for key, value in data.items()
                 if key in conflict_columns}
@@ -359,8 +367,7 @@ class ReportDBAccessorBase(KokuDBAccess):
             table (Table): A SQLAlchemy mapped table object
 
         """
-        self._session.add(table)
-        self._session.flush()
+        table.save()
 
     def clean_data(self, data, table_name):
         """Clean data for insertion into database.

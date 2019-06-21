@@ -79,9 +79,7 @@ class ReportObjectCreator:
             data['billing_period_end'] = bill_end
 
         row = self.db_accessor.create_db_object(table_name, data)
-
-        self.db_accessor._session.add(row)
-        self.db_accessor._session.commit()
+        row.save()
 
         return row
 
@@ -90,10 +88,7 @@ class ReportObjectCreator:
         table_name = AWS_CUR_TABLE_MAP['pricing']
         data = self.create_columns_for_table(table_name)
         row = self.db_accessor.create_db_object(table_name, data)
-
-        self.db_accessor._session.add(row)
-        self.db_accessor._session.commit()
-
+        row.save()
         return row
 
     def create_cost_entry_product(self, product_family=None):
@@ -105,8 +100,7 @@ class ReportObjectCreator:
             row.product_family = product_family
         else:
             row.product_family = random.choice(AWS_PRODUCT_FAMILY)
-        self.db_accessor._session.add(row)
-        self.db_accessor._session.commit()
+        row.save()
 
         return row
 
@@ -115,9 +109,7 @@ class ReportObjectCreator:
         table_name = AWS_CUR_TABLE_MAP['reservation']
         data = self.create_columns_for_table(table_name)
         row = self.db_accessor.create_db_object(table_name, data)
-
-        self.db_accessor._session.add(row)
-        self.db_accessor._session.commit()
+        row.save()
 
         return row
 
@@ -146,8 +138,7 @@ class ReportObjectCreator:
         }
         if resource_id:
             row.resource_id = resource_id
-        self.db_accessor._session.add(row)
-        self.db_accessor._session.commit()
+        row.save()
 
         return row
 
@@ -170,9 +161,7 @@ class ReportObjectCreator:
             data['report_period_end'] = period_end
 
         row = self.db_accessor.create_db_object(table_name, data)
-
-        self.db_accessor._session.add(row)
-        self.db_accessor._session.commit()
+        row.save()
 
         return row
 
@@ -188,10 +177,7 @@ class ReportObjectCreator:
         data['interval_start'] = start_datetime
         data['interval_end'] = start_datetime + relativedelta.relativedelta(hours=+1)
         row = self.db_accessor.create_db_object(table_name, data)
-
-        self.db_accessor._session.add(row)
-        self.db_accessor._session.commit()
-
+        row.save()
         return row
 
     def create_ocp_usage_line_item(self,
@@ -213,9 +199,7 @@ class ReportObjectCreator:
 
         row.report_period_id = report_period.id
         row.report_id = report.id
-
-        self.db_accessor._session.add(row)
-        self.db_accessor._session.commit()
+        row.save()
 
         return row
 
@@ -234,10 +218,7 @@ class ReportObjectCreator:
 
         row.report_period_id = report_period.id
         row.report_id = report.id
-
-        self.db_accessor._session.add(row)
-        self.db_accessor._session.commit()
-
+        row.save()
         return row
 
     def create_columns_for_table(self, table):
@@ -248,20 +229,23 @@ class ReportObjectCreator:
 
         for column in columns:
             col_type = column_types[column]
-            if col_type == int:
+
+            # This catches serveral different types of IntegerFields such as:
+            # PositiveIntegerField, BigIntegerField,
+            if 'IntegerField' in col_type:
                 data[column] = self.fake.pyint()
-            elif col_type == float:
+            elif col_type == 'FloatField':
                 data[column] = self.fake.pyfloat()
-            elif col_type == dict:
+            elif col_type == 'JSONField':
                 data[column] = {
                     'label_one': self.fake.pystr()[:8],
                     'label_two': self.fake.pystr()[:8]
                 }
-            elif col_type == datetime.datetime:
+            elif col_type == 'DateTimeField':
                 data[column] = self.stringify_datetime(
                     self.fake.past_datetime()
                 )
-            elif col_type == Decimal:
+            elif col_type == 'DecimalField':
                 data[column] = self.fake.pydecimal(0,7)
             else:
                 data[column] = self.fake.pystr()[:8]

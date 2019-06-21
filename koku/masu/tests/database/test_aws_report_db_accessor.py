@@ -27,8 +27,8 @@ from unittest.mock import patch
 
 import psycopg2
 from dateutil import relativedelta
-from sqlalchemy.orm.query import Query
-from sqlalchemy.sql import func
+import django.apps
+from tenant_schemas.utils import schema_context
 
 
 from masu.database import AWS_CUR_TABLE_MAP
@@ -40,40 +40,39 @@ from masu.database.report_manifest_db_accessor import ReportManifestDBAccessor
 from masu.database.reporting_common_db_accessor import ReportingCommonDBAccessor
 from masu.external.date_accessor import DateAccessor
 from masu.util.ocp.common import get_cluster_id_from_provider
-from tests import MasuTestCase
-from tests.database.helpers import ReportObjectCreator
+from masu.tests import MasuTestCase
+from masu.tests.database.helpers import ReportObjectCreator
 
 
 class ReportSchemaTest(MasuTestCase):
     """Test Cases for the ReportSchema object."""
 
-    @classmethod
-    def setUpClass(cls):
+    def setUp(self):
         """Set up the test class with required objects."""
-        cls.common_accessor = ReportingCommonDBAccessor()
-        cls.column_map = cls.common_accessor.column_map
-        cls.accessor = AWSReportDBAccessor(
+
+        super().setUp()
+
+        self.common_accessor = ReportingCommonDBAccessor()
+        self.column_map = self.common_accessor.column_map
+        self.accessor = AWSReportDBAccessor(
             schema='acct10001',
-            column_map=cls.column_map
+            column_map=self.column_map
         )
-        cls.all_tables = list(AWS_CUR_TABLE_MAP.values())
-        cls.foreign_key_tables = [
+        self.all_tables = list(AWS_CUR_TABLE_MAP.values())
+        self.foreign_key_tables = [
             AWS_CUR_TABLE_MAP['bill'],
             AWS_CUR_TABLE_MAP['product'],
             AWS_CUR_TABLE_MAP['pricing'],
             AWS_CUR_TABLE_MAP['reservation']
         ]
 
-    @classmethod
-    def tearDownClass(cls):
+    def tearDown(self):
         """Close the DB session."""
-        cls.common_accessor.close_session()
-        cls.accessor.close_connections()
-        cls.accessor.close_session()
+        self.accessor.close_connections()
 
     def test_init(self):
         """Test the initializer."""
-        tables = self.accessor.get_base().classes
+        tables = django.apps.apps.get_models()
         report_schema = ReportSchema(tables, self.column_map)
 
         for table_name in self.all_tables:

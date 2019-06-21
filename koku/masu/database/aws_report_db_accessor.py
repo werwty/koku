@@ -23,6 +23,7 @@ import pkgutil
 import uuid
 
 from masu.config import Config
+from masu.database import AWS_CUR_TABLE_MAP
 from masu.database.report_db_accessor_base import ReportDBAccessorBase
 from masu.external.date_accessor import DateAccessor
 
@@ -88,8 +89,11 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
             getattr(self.report_schema, table),
             'billing_period_start'
         )
+        kwargs = {
+            '{0}__{1}'.format(billing_start, 'leq'): date,
+        }
         base_query = self._get_db_obj_query(table)
-        cost_entry_bill_query = base_query.filter(billing_start <= date)
+        cost_entry_bill_query = base_query.filter(**kwargs)
         return cost_entry_bill_query
 
     def get_lineitem_query_for_billid(self, bill_id):
@@ -99,8 +103,11 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
             getattr(self.report_schema, table_name),
             'cost_entry_bill_id'
         )
+        kwargs = {
+            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+        }
         base_query = self._get_db_obj_query(table_name)
-        line_item_query = base_query.filter(cost_entry_bill_id == bill_id)
+        line_item_query = base_query.filter(**kwargs)
         return line_item_query
 
     def get_daily_query_for_billid(self, bill_id):
@@ -110,8 +117,11 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
             getattr(self.report_schema, table_name),
             'cost_entry_bill_id'
         )
+        kwargs = {
+            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+        }
         base_query = self._get_db_obj_query(table_name)
-        daily_item_query = base_query.filter(cost_entry_bill_id == bill_id)
+        daily_item_query = base_query.filter(**kwargs)
         return daily_item_query
 
     def get_summary_query_for_billid(self, bill_id):
@@ -121,8 +131,11 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
             getattr(self.report_schema, table_name),
             'cost_entry_bill_id'
         )
+        kwargs = {
+            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+        }
         base_query = self._get_db_obj_query(table_name)
-        summary_item_query = base_query.filter(cost_entry_bill_id == bill_id)
+        summary_item_query = base_query.filter(**kwargs)
         return summary_item_query
 
     def get_ocp_aws_summary_query_for_billid(self, bill_id):
@@ -132,8 +145,11 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
             getattr(self.report_schema, table_name),
             'cost_entry_bill_id'
         )
+        kwargs = {
+            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+        }
         base_query = self._get_db_obj_query(table_name)
-        summary_item_query = base_query.filter(cost_entry_bill_id == bill_id)
+        summary_item_query = base_query.filter(**kwargs)
         return summary_item_query
 
     def get_ocp_aws_project_summary_query_for_billid(self, bill_id):
@@ -143,8 +159,11 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
             getattr(self.report_schema, table_name),
             'cost_entry_bill_id'
         )
+        kwargs = {
+            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+        }
         base_query = self._get_db_obj_query(table_name)
-        summary_item_query = base_query.filter(cost_entry_bill_id == bill_id)
+        summary_item_query = base_query.filter(**kwargs)
         return summary_item_query
 
     def get_cost_entry_query_for_billid(self, bill_id):
@@ -155,8 +174,11 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
             getattr(self.report_schema, table_name),
             'bill_id'
         )
+        kwargs = {
+            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+        }
         base_query = self._get_db_obj_query(table_name)
-        line_item_query = base_query.filter(cost_entry_bill_id == bill_id)
+        line_item_query = base_query.filter(**kwargs)
         return line_item_query
 
     def get_cost_entries(self):
@@ -246,7 +268,7 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
         table_name = AWS_CUR_TABLE_MAP['bill']
 
         bill = self._get_db_obj_query(table_name)\
-            .filter_by(id=bill_id)\
+            .filter(id=bill_id)\
             .first()
 
         if bill.finalized_datetime is None:
