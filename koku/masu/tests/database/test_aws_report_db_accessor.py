@@ -16,10 +16,8 @@
 #
 
 """Test the AWSReportDBAccessor utility object."""
-import calendar
 import datetime
-from decimal import Decimal, InvalidOperation
-import types
+from decimal import Decimal
 import random
 import string
 import uuid
@@ -28,10 +26,11 @@ from unittest.mock import patch
 import psycopg2
 import django.apps
 from dateutil import relativedelta
+from django.db import connection
+from django.db.models import Sum
 from django.db.models.query import QuerySet
 from tenant_schemas.utils import schema_context
 
-from django.db import transaction
 from masu.database import AWS_CUR_TABLE_MAP
 from masu.database.report_db_accessor_base import ReportSchema
 from masu.database.aws_report_db_accessor import AWSReportDBAccessor
@@ -40,9 +39,9 @@ from masu.database.provider_db_accessor import ProviderDBAccessor
 from masu.database.report_manifest_db_accessor import ReportManifestDBAccessor
 from masu.database.reporting_common_db_accessor import ReportingCommonDBAccessor
 from masu.external.date_accessor import DateAccessor
-from masu.util.ocp.common import get_cluster_id_from_provider
 from masu.tests import MasuTestCase
 from masu.tests.database.helpers import ReportObjectCreator
+from masu.util.ocp.common import get_cluster_id_from_provider
 
 
 class ReportSchemaTest(MasuTestCase):
@@ -56,7 +55,7 @@ class ReportSchemaTest(MasuTestCase):
         self.common_accessor = ReportingCommonDBAccessor()
         self.column_map = self.common_accessor.column_map
         self.accessor = AWSReportDBAccessor(
-            schema='acct10001',
+            schema=self.schema,
             column_map=self.column_map
         )
         self.all_tables = list(AWS_CUR_TABLE_MAP.values())
@@ -69,6 +68,7 @@ class ReportSchemaTest(MasuTestCase):
 
     def tearDown(self):
         """Close the DB session."""
+        super.tearDown()
         self.accessor.close_connections()
 
     def test_init(self):
@@ -116,46 +116,48 @@ class ReportDBAccessorTest(MasuTestCase):
     """Test Cases for the ReportDBAccessor object."""
 
     def run(self, result=None):
-        with schema_context('acct10001'):
-            super(ReportDBAccessorTest, self).run(result)
+        with schema_context(self.schema):
+            super().run(result)
 
+    @classmethod
+    def setUpClass(cls):
+        """Set up the test class with required objects."""
+        super().setUpClass()
 
-    def setUp(self):
-        """"Set up a test with database objects."""
-        super().setUp()
-
-        self.common_accessor = ReportingCommonDBAccessor()
-        self.column_map = self.common_accessor.column_map
-        self.accessor = AWSReportDBAccessor(
-            schema=self.schema,
-            column_map=self.column_map
+        cls.common_accessor = ReportingCommonDBAccessor()
+        cls.column_map = cls.common_accessor.column_map
+        cls.accessor = AWSReportDBAccessor(
+            schema=cls.schema,
+            column_map=cls.column_map
         )
-        self.report_schema = self.accessor.report_schema
-        self.creator = ReportObjectCreator(
-            self.accessor,
-            self.column_map,
-            self.report_schema.column_types
+        cls.report_schema = cls.accessor.report_schema
+        cls.creator = ReportObjectCreator(
+            cls.accessor,
+            cls.column_map,
+            cls.report_schema.column_types
         )
-        self.all_tables = list(AWS_CUR_TABLE_MAP.values())
-        self.foreign_key_tables = [
+
+        cls.all_tables = list(AWS_CUR_TABLE_MAP.values())
+        cls.foreign_key_tables = [
             AWS_CUR_TABLE_MAP['bill'],
             AWS_CUR_TABLE_MAP['product'],
             AWS_CUR_TABLE_MAP['pricing'],
             AWS_CUR_TABLE_MAP['reservation']
         ]
         billing_start = datetime.datetime.utcnow().replace(day=1)
-        self.manifest_dict = {
+        cls.manifest_dict = {
             'assembly_id': '1234',
             'billing_period_start_datetime': billing_start,
             'num_total_files': 2,
             'provider_id': 1
         }
-        self.manifest_accessor = ReportManifestDBAccessor()
+        cls.manifest_accessor = ReportManifestDBAccessor()
 
-        #if self.accessor._conn.closed:
-        #    self.accessor._conn = self.accessor._db.connect()
-        #if self.accessor._pg2_conn.closed:
-        #    self.accessor._pg2_conn = self.accessor._get_psycopg2_connection()
+    def setUp(self):
+        """"Set up a test with database objects."""
+
+        super().setUp()
+
         if self.accessor._cursor.closed:
             self.accessor._cursor = self.accessor._get_psycopg2_cursor()
 
@@ -166,24 +168,14 @@ class ReportDBAccessorTest(MasuTestCase):
             product = self.creator.create_cost_entry_product()
             pricing = self.creator.create_cost_entry_pricing()
             reservation = self.creator.create_cost_entry_reservation()
-            line_item = self.creator.create_cost_entry_line_item(
+            self.creator.create_cost_entry_line_item(
                 bill,
                 cost_entry,
                 product,
                 pricing,
                 reservation
             )
-            #self.creator.create_ocpawscostlineitem_project_daily_summary(
-            #    self.customer_data['account_id'],
-            #    self.schema
-            #)
-            #
-            #self.creator.create_awscostentrylineitem_daily_summary(
-            #    self.customer_data['account_id'],
-            #    self.schema
-            #)
-            #
-            #self.manifest = self.manifest_accessor.add(**self.manifest_dict)
+            self.manifest = self.manifest_accessor.add(**self.manifest_dict)
 
     def test_initializer(self):
         """Test initializer."""
@@ -200,13 +192,20 @@ class ReportDBAccessorTest(MasuTestCase):
         """Test that a psycopg2 cursor is returned."""
         cursor = self.accessor._get_psycopg2_cursor()
 
-        self.assertIsInstance(cursor, psycopg2.extensions.cursor)
+        self.assertIsInstance(cursor, type(connection.cursor()))
 
     def test_create_temp_table(self):
         """Test that a temporary table is created."""
 
-        table_name = random.choice(self.all_tables)
+        table_name = 'test_table'
         cursor = self.accessor._cursor
+
+        drop_table = f'DROP TABLE IF EXISTS {table_name}'
+        cursor.execute(drop_table)
+
+        create_table = f'CREATE TABLE {table_name} (id serial primary key, test_column varchar(8) unique)'
+        cursor.execute(create_table)
+
         temp_table_name = self.accessor.create_temp_table(table_name)
 
         exists = """
@@ -222,137 +221,119 @@ class ReportDBAccessorTest(MasuTestCase):
 
         self.assertTrue(result[0])
 
-    # def test_merge_temp_table(self):
-    #     """Test that a temp table insert succeeds."""
-    #     table_name = 'test_table'
-    #     columns = ['test_column']
-    #     conflict_columns = columns
-    #     condition_column = columns[0]
-    #     cursor = self.accessor._cursor
-    #     import ipdb; ipdb.set_trace()
-    #     drop_table = f'DROP TABLE IF EXISTS {table_name}'
-    #     cursor.execute(drop_table)
-    #
-    #     create_table = f'CREATE TABLE {table_name} (id serial primary key, test_column varchar(8) unique)'
-    #     cursor.execute(create_table)
-    #
-    #     count = f'SELECT count(*) FROM {table_name}'
-    #     cursor.execute(count)
-    #     initial_count = cursor.fetchone()[0]
-    #
-    #     temp_table_name = self.accessor.create_temp_table(table_name, drop_column='id')
-    #
-    #     insert = f'INSERT INTO {temp_table_name} (test_column) VALUES (\'123\')'
-    #     cursor.execute(insert)
-    #
-    #     self.accessor.merge_temp_table(table_name, temp_table_name, columns,
-    #                                    condition_column, conflict_columns)
-    #
-    #     cursor.execute(count)
-    #     final_count = cursor.fetchone()[0]
-    #
-    #     self.assertEqual(initial_count + 1, final_count)
-    #
-    #
-    #     cursor.execute(drop_table)
-    #     self.accessor._pg2_conn.commit()
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
+    def test_merge_temp_table(self, mock_vacuum):
+        """Test that a temp table insert succeeds."""
+        table_name = 'test_table'
+        columns = ['test_column']
+        conflict_columns = columns
+        condition_column = columns[0]
+        cursor = self.accessor._cursor
+        drop_table = f'DROP TABLE IF EXISTS {table_name}'
+        cursor.execute(drop_table)
 
-    # def test_merge_temp_table_with_duplicate(self):
-    #     """Test that a temp table with duplicate row does not insert."""
-    #     table_name = 'test_table'
-    #     columns = ['test_column']
-    #     conflict_columns = columns
-    #     condition_column = columns[0]
-    #     cursor = self.accessor._cursor
-    #
-    #     drop_table = f'DROP TABLE IF EXISTS {table_name}'
-    #     cursor.execute(drop_table)
-    #
-    #     create_table = f'CREATE TABLE {table_name} (id serial primary key, test_column varchar(8) unique)'
-    #     cursor.execute(create_table)
-    #
-    #     insert = f'INSERT INTO {table_name} (test_column) VALUES (\'123\')'
-    #     cursor.execute(insert)
-    #
-    #     count = f'SELECT count(*) FROM {table_name}'
-    #     cursor.execute(count)
-    #     initial_count = cursor.fetchone()[0]
-    #
-    #     temp_table_name = self.accessor.create_temp_table(table_name, drop_column='id')
-    #
-    #     insert = f'INSERT INTO {temp_table_name} (test_column) VALUES (\'123\')'
-    #     cursor.execute(insert)
-    #
-    #     self.accessor.merge_temp_table(table_name, temp_table_name, columns,
-    #                                    condition_column, conflict_columns)
-    #
-    #     cursor.execute(count)
-    #     final_count = cursor.fetchone()[0]
-    #
-    #     self.assertEqual(initial_count, final_count)
-    #
-    #     cursor.execute(drop_table)
-    #     self.accessor._pg2_conn.commit()
-    #
-    # def test_merge_temp_table_with_updates(self):
-    #     """Test that rows with invoice ids get updated."""
-    #     table_name = 'test_table'
-    #     columns = ['test_column', 'invoice_id']
-    #     condition_column = columns[1]
-    #     conflict_columns = ['test_column']
-    #     expected_invoice_id = str(uuid.uuid4())
-    #     cursor = self.accessor._cursor
-    #
-    #     drop_table = f'DROP TABLE IF EXISTS {table_name}'
-    #     cursor.execute(drop_table)
-    #
-    #     create_table = f'CREATE TABLE {table_name} (id serial primary key, test_column varchar(8) unique, invoice_id varchar(64))'
-    #     cursor.execute(create_table)
-    #
-    #     insert = f'INSERT INTO {table_name} (test_column) VALUES (\'123\')'
-    #     cursor.execute(insert)
-    #
-    #     count = f'SELECT count(*) FROM {table_name}'
-    #     cursor.execute(count)
-    #     initial_count = cursor.fetchone()[0]
-    #
-    #     temp_table_name = self.accessor.create_temp_table(table_name, drop_column='id')
-    #
-    #     insert = f'INSERT INTO {temp_table_name} (test_column, invoice_id) VALUES (\'123\', \'{expected_invoice_id}\')'
-    #     cursor.execute(insert)
-    #
-    #     self.accessor.merge_temp_table(table_name, temp_table_name, columns,
-    #                                    condition_column, conflict_columns)
-    #
-    #     invoice_sql = f'SELECT invoice_id FROM {table_name}'
-    #     cursor.execute(invoice_sql)
-    #     invoice_id = cursor.fetchone()
-    #     invoice_id = invoice_id[0] if invoice_id else None
-    #
-    #     cursor.execute(count)
-    #     final_count = cursor.fetchone()[0]
-    #
-    #     self.assertEqual(initial_count, final_count)
-    #     self.assertEqual(invoice_id, expected_invoice_id)
-    #
-    #     cursor.execute(drop_table)
-    #     self.accessor._pg2_conn.commit()
+        create_table = f'CREATE TABLE {table_name} (id serial primary key, test_column varchar(8) unique)'
+        cursor.execute(create_table)
 
-    def test_close_connections_with_arg(self):
-        """Test that the passed in psycopg2 connection is closed."""
-        conn = self.accessor._get_psycopg2_connection()
+        count = f'SELECT count(*) FROM {table_name}'
+        cursor.execute(count)
+        initial_count = cursor.fetchone()[0]
 
-        self.accessor.close_connections(conn)
+        temp_table_name = self.accessor.create_temp_table(table_name, drop_column='id')
 
-        self.assertTrue(conn.closed)
+        insert = f'INSERT INTO {temp_table_name} (test_column) VALUES (\'123\')'
+        cursor.execute(insert)
 
-    def test_close_connections_default(self):
-        """Test that the accessor's psycopg2 connection is closed."""
-        self.accessor.close_connections()
+        self.accessor.merge_temp_table(table_name, temp_table_name, columns,
+                                       condition_column, conflict_columns)
 
-        self.assertTrue(self.accessor._pg2_conn.closed)
-        # Return the accessor's connection to its open state
-        self.accessor._pg2_conn = self.accessor._get_psycopg2_connection()
+        cursor.execute(count)
+        final_count = cursor.fetchone()[0]
+
+        self.assertEqual(initial_count + 1, final_count)
+
+        cursor.execute(drop_table)
+
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
+    def test_merge_temp_table_with_duplicate(self, mock_vacuum):
+        """Test that a temp table with duplicate row does not insert."""
+        table_name = 'test_table'
+        columns = ['test_column']
+        conflict_columns = columns
+        condition_column = columns[0]
+        cursor = self.accessor._cursor
+
+        drop_table = f'DROP TABLE IF EXISTS {table_name}'
+        cursor.execute(drop_table)
+
+        create_table = f'CREATE TABLE {table_name} (id serial primary key, test_column varchar(8) unique)'
+        cursor.execute(create_table)
+
+        insert = f'INSERT INTO {table_name} (test_column) VALUES (\'123\')'
+        cursor.execute(insert)
+
+        count = f'SELECT count(*) FROM {table_name}'
+        cursor.execute(count)
+        initial_count = cursor.fetchone()[0]
+
+        temp_table_name = self.accessor.create_temp_table(table_name, drop_column='id')
+
+        insert = f'INSERT INTO {temp_table_name} (test_column) VALUES (\'123\')'
+        cursor.execute(insert)
+
+        self.accessor.merge_temp_table(table_name, temp_table_name, columns,
+                                       condition_column, conflict_columns)
+
+        cursor.execute(count)
+        final_count = cursor.fetchone()[0]
+
+        self.assertEqual(initial_count, final_count)
+
+        cursor.execute(drop_table)
+
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
+    def test_merge_temp_table_with_updates(self, mock_vacuum):
+        """Test that rows with invoice ids get updated."""
+        table_name = 'test_table'
+        columns = ['test_column', 'invoice_id']
+        condition_column = columns[1]
+        conflict_columns = ['test_column']
+        expected_invoice_id = str(uuid.uuid4())
+        cursor = self.accessor._cursor
+
+        drop_table = f'DROP TABLE IF EXISTS {table_name}'
+        cursor.execute(drop_table)
+
+        create_table = f'CREATE TABLE {table_name} (id serial primary key, test_column varchar(8) unique, invoice_id varchar(64))'
+        cursor.execute(create_table)
+
+        insert = f'INSERT INTO {table_name} (test_column) VALUES (\'123\')'
+        cursor.execute(insert)
+
+        count = f'SELECT count(*) FROM {table_name}'
+        cursor.execute(count)
+        initial_count = cursor.fetchone()[0]
+
+        temp_table_name = self.accessor.create_temp_table(table_name, drop_column='id')
+
+        insert = f'INSERT INTO {temp_table_name} (test_column, invoice_id) VALUES (\'123\', \'{expected_invoice_id}\')'
+        cursor.execute(insert)
+
+        self.accessor.merge_temp_table(table_name, temp_table_name, columns,
+                                       condition_column, conflict_columns)
+
+        invoice_sql = f'SELECT invoice_id FROM {table_name}'
+        cursor.execute(invoice_sql)
+        invoice_id = cursor.fetchone()
+        invoice_id = invoice_id[0] if invoice_id else None
+
+        cursor.execute(count)
+        final_count = cursor.fetchone()[0]
+
+        self.assertEqual(initial_count, final_count)
+        self.assertEqual(invoice_id, expected_invoice_id)
+
+        cursor.execute(drop_table)
 
     def test_get_db_obj_query_default(self):
         """Test that a query is returned."""
@@ -394,8 +375,6 @@ class ReportDBAccessorTest(MasuTestCase):
             elif type(value) is float:
                 columns[name] = 'FLOAT'
         return columns
-
-
 
     def test_bulk_insert_rows(self):
         """Test that the bulk insert method inserts line items."""
@@ -514,7 +493,6 @@ class ReportDBAccessorTest(MasuTestCase):
             conflict_columns=['reservation_arn'],
             set_columns=list(data.keys())
         )
-        #self.accessor.commit()
         row = query.filter(id=row_id_2).first()
 
         self.assertEqual(insert_count, query.count())
@@ -522,31 +500,31 @@ class ReportDBAccessorTest(MasuTestCase):
         self.assertEqual(row.number_of_reservations, initial_res_count + 1)
 
 
-    # def test_insert_on_conflict_do_update_without_conflict(self):
-    #     """Test that an INSERT succeeds inserting all non-conflicting rows."""
-    #     table_name = AWS_CUR_TABLE_MAP['reservation']
-    #     data = [
-    #         self.creator.create_columns_for_table(table_name),
-    #         self.creator.create_columns_for_table(table_name)
-    #     ]
-    #     query = self.accessor._get_db_obj_query(table_name)
-    #
-    #     previous_count = query.count()
-    #     previous_row_id = None
-    #     for entry in data:
-    #         row_id = self.accessor.insert_on_conflict_do_update(
-    #             table_name,
-    #             entry,
-    #             conflict_columns=['reservation_arn'],
-    #             set_columns=list(entry.keys())
-    #         )
-    #         count = query.count()
-    #
-    #         self.assertEqual(count, previous_count + 1)
-    #         self.assertNotEqual(row_id, previous_row_id)
-    #
-    #         previous_count = count
-    #         previous_row_id = row_id
+    def test_insert_on_conflict_do_update_without_conflict(self):
+        """Test that an INSERT succeeds inserting all non-conflicting rows."""
+        table_name = AWS_CUR_TABLE_MAP['reservation']
+        data = [
+            self.creator.create_columns_for_table(table_name),
+            self.creator.create_columns_for_table(table_name)
+        ]
+        query = self.accessor._get_db_obj_query(table_name)
+
+        previous_count = query.count()
+        previous_row_id = None
+        for entry in data:
+            row_id = self.accessor.insert_on_conflict_do_update(
+                table_name,
+                entry,
+                conflict_columns=['reservation_arn'],
+                set_columns=list(entry.keys())
+            )
+            count = query.count()
+
+            self.assertEqual(count, previous_count + 1)
+            self.assertNotEqual(row_id, previous_row_id)
+
+            previous_count = count
+            previous_row_id = row_id
 
     def test_get_primary_key(self):
         """Test that a primary key is returned."""
@@ -749,155 +727,160 @@ class ReportDBAccessorTest(MasuTestCase):
         self.assertIn(first_entry.reservation_arn, reservations)
 
     # populate_line_item_daily_table uses commit and vacuum
-    # def test_populate_line_item_daily_table(self):
-    #     """Test that the daily table is populated."""
-    #     ce_table_name = AWS_CUR_TABLE_MAP['cost_entry']
-    #     daily_table_name = AWS_CUR_TABLE_MAP['line_item_daily']
-    #
-    #     ce_table = getattr(self.accessor.report_schema, ce_table_name)
-    #     daily_table = getattr(self.accessor.report_schema, daily_table_name)
-    #
-    #     for _ in range(10):
-    #         bill = self.creator.create_cost_entry_bill()
-    #         cost_entry = self.creator.create_cost_entry(bill)
-    #         product = self.creator.create_cost_entry_product()
-    #         pricing = self.creator.create_cost_entry_pricing()
-    #         reservation = self.creator.create_cost_entry_reservation()
-    #         self.creator.create_cost_entry_line_item(
-    #             bill,
-    #             cost_entry,
-    #             product,
-    #             pricing,
-    #             reservation
-    #         )
-    #
-    #     bills = self.accessor.get_cost_entry_bills_query_by_provider(1)
-    #     bill_ids = [str(bill.id) for bill in bills.all()]
-    #
-    #     ce_entry = ce_table.objects.all().first()
-    #     start_date = ce_entry.interval_start
-    #     end_date = ce_entry.interval_end
-    #
-    #     start_date = start_date.replace(hour=0, minute=0, second=0,
-    #                                     microsecond=0)
-    #     end_date = end_date.replace(hour=0, minute=0, second=0,
-    #                                     microsecond=0)
-    #
-    #     query = self.accessor._get_db_obj_query(daily_table_name)
-    #     initial_count = query.count()
-    #
-    #     self.accessor.populate_line_item_daily_table(start_date, end_date, bill_ids)
-    #
-    #
-    #     self.assertNotEqual(query.count(), initial_count)
-    #
-    #     daily_entry= daily_table.objects.first()
-    #
-    #     result_start_date = daily_entry.usage_start
-    #     result_end_date= daily_entry.usage_end
-    #
-    #     self.assertEqual(result_start_date, start_date)
-    #     self.assertEqual(result_end_date, end_date)
-    #
-    #     entry = query.first()
-    #
-    #     summary_columns = [
-    #         'cost_entry_product_id', 'cost_entry_pricing_id',
-    #         'cost_entry_reservation_id', 'line_item_type', 'usage_account_id',
-    #         'usage_start', 'usage_end', 'product_code', 'usage_type',
-    #         'operation', 'availability_zone', 'resource_id', 'usage_amount',
-    #         'normalization_factor', 'normalized_usage_amount', 'currency_code',
-    #         'unblended_rate', 'unblended_cost', 'blended_rate', 'blended_cost',
-    #         'public_on_demand_cost', 'public_on_demand_rate', 'tags'
-    #     ]
-    #
-    #     for column in summary_columns:
-    #         self.assertIsNotNone(getattr(entry, column))
-    #
-    #     self.assertNotEqual(getattr(entry, 'tags'), {})
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
+    def test_populate_line_item_daily_table(self, mock_vacuum):
+        """Test that the daily table is populated."""
+        ce_table_name = AWS_CUR_TABLE_MAP['cost_entry']
+        daily_table_name = AWS_CUR_TABLE_MAP['line_item_daily']
 
-    # def test_populate_line_item_daily_summary_table(self):
-    #     """Test that the daily summary table is populated."""
-    #     ce_table_name = AWS_CUR_TABLE_MAP['cost_entry']
-    #     summary_table_name = AWS_CUR_TABLE_MAP['line_item_daily_summary']
-    #
-    #     ce_table = getattr(self.accessor.report_schema, ce_table_name)
-    #     summary_table = getattr(self.accessor.report_schema, summary_table_name)
-    #
-    #     for _ in range(10):
-    #         bill = self.creator.create_cost_entry_bill()
-    #         cost_entry = self.creator.create_cost_entry(bill)
-    #         product = self.creator.create_cost_entry_product()
-    #         pricing = self.creator.create_cost_entry_pricing()
-    #         reservation = self.creator.create_cost_entry_reservation()
-    #         self.creator.create_cost_entry_line_item(
-    #             bill,
-    #             cost_entry,
-    #             product,
-    #             pricing,
-    #             reservation
-    #         )
-    #
-    #     bills = self.accessor.get_cost_entry_bills_query_by_provider(1)
-    #     bill_ids = [str(bill.id) for bill in bills.all()]
-    #
-    #     table_name = AWS_CUR_TABLE_MAP['line_item']
-    #     tag_query = self.accessor._get_db_obj_query(table_name)
-    #     possible_keys = []
-    #     possible_values = []
-    #     for item in tag_query:
-    #         possible_keys += list(item.tags.keys())
-    #         possible_values += list(item.tags.values())
-    #
-    #     ce_entry = ce_table.objects.all().first()
-    #     start_date = ce_entry.interval_start
-    #     end_date = ce_entry.interval_end
-    #
-    #     start_date = start_date.replace(hour=0, minute=0, second=0,
-    #                                     microsecond=0)
-    #     end_date = end_date.replace(hour=0, minute=0, second=0,
-    #                                     microsecond=0)
-    #
-    #     query = self.accessor._get_db_obj_query(summary_table_name)
-    #     initial_count = query.count()
-    #     self.accessor.populate_line_item_daily_table(start_date, end_date, bill_ids)
-    #     self.accessor.populate_line_item_daily_summary_table(start_date,
-    #                                                           end_date,
-    #                                                           bill_ids)
-    #
-    #     self.assertNotEqual(query.count(), initial_count)
-    #
-    #     summary_entry= summary_table.objects.first()
-    #     result_start_date = summary_entry.usage_start
-    #     result_end_date = summary_entry.usage_end
-    #
-    #     self.assertEqual(result_start_date, start_date)
-    #     self.assertEqual(result_end_date, end_date)
-    #
-    #     entry = query.first()
-    #
-    #     summary_columns = [
-    #         'usage_start', 'usage_end', 'usage_account_id',
-    #         'product_code', 'product_family', 'availability_zone', 'region',
-    #         'instance_type', 'unit', 'resource_count', 'usage_amount',
-    #         'normalization_factor', 'normalized_usage_amount', 'currency_code',
-    #         'unblended_rate', 'unblended_cost', 'blended_rate', 'blended_cost',
-    #         'public_on_demand_cost', 'public_on_demand_rate', 'tags'
-    #     ]
-    #
-    #     for column in summary_columns:
-    #         self.assertIsNotNone(getattr(entry, column))
-    #
-    #     found_keys = []
-    #     found_values = []
-    #     for item in query.all():
-    #         found_keys += list(item.tags.keys())
-    #         found_values += list(item.tags.values())
-    #
-    #     self.assertEqual(set(sorted(possible_keys)), set(sorted(found_keys)))
-    #     self.assertEqual(set(sorted(possible_values)), set(sorted(found_values)))
+        ce_table = getattr(self.accessor.report_schema, ce_table_name)
+        daily_table = getattr(self.accessor.report_schema, daily_table_name)
 
-    def test_populate_awstags_summary_table(self):
+        for _ in range(10):
+            bill = self.creator.create_cost_entry_bill()
+            cost_entry = self.creator.create_cost_entry(bill)
+            product = self.creator.create_cost_entry_product()
+            pricing = self.creator.create_cost_entry_pricing()
+            reservation = self.creator.create_cost_entry_reservation()
+            self.creator.create_cost_entry_line_item(
+                bill,
+                cost_entry,
+                product,
+                pricing,
+                reservation
+            )
+
+        bills = self.accessor.get_cost_entry_bills_query_by_provider(1)
+        bill_ids = [str(bill.id) for bill in bills.all()]
+
+        ce_entry = ce_table.objects.all().first()
+        start_date = ce_entry.interval_start
+        end_date = ce_entry.interval_end
+
+        start_date = start_date.replace(hour=0, minute=0, second=0,
+                                        microsecond=0)
+        end_date = end_date.replace(hour=0, minute=0, second=0,
+                                        microsecond=0)
+
+        query = self.accessor._get_db_obj_query(daily_table_name)
+        initial_count = query.count()
+
+        self.accessor.populate_line_item_daily_table(start_date, end_date, bill_ids)
+
+
+        self.assertNotEqual(query.count(), initial_count)
+
+        daily_entry= daily_table.objects.first()
+
+        result_start_date = daily_entry.usage_start
+        result_end_date= daily_entry.usage_end
+
+        self.assertEqual(result_start_date, start_date)
+        self.assertEqual(result_end_date, end_date)
+
+        entry = query.first()
+
+        summary_columns = [
+            'cost_entry_product_id', 'cost_entry_pricing_id',
+            'cost_entry_reservation_id', 'line_item_type', 'usage_account_id',
+            'usage_start', 'usage_end', 'product_code', 'usage_type',
+            'operation', 'availability_zone', 'resource_id', 'usage_amount',
+            'normalization_factor', 'normalized_usage_amount', 'currency_code',
+            'unblended_rate', 'unblended_cost', 'blended_rate', 'blended_cost',
+            'public_on_demand_cost', 'public_on_demand_rate', 'tags'
+        ]
+
+        for column in summary_columns:
+            self.assertIsNotNone(getattr(entry, column))
+
+        self.assertNotEqual(getattr(entry, 'tags'), {})
+
+    # TODO: WHY does this not work?
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
+    def test_populate_line_item_daily_summary_table(self, mock_vaccum):
+        """Test that the daily summary table is populated."""
+        ce_table_name = AWS_CUR_TABLE_MAP['cost_entry']
+        summary_table_name = AWS_CUR_TABLE_MAP['line_item_daily_summary']
+
+        ce_table = getattr(self.accessor.report_schema, ce_table_name)
+        summary_table = getattr(self.accessor.report_schema, summary_table_name)
+
+        for _ in range(10):
+            bill = self.creator.create_cost_entry_bill()
+            cost_entry = self.creator.create_cost_entry(bill)
+            product = self.creator.create_cost_entry_product()
+            pricing = self.creator.create_cost_entry_pricing()
+            reservation = self.creator.create_cost_entry_reservation()
+            self.creator.create_cost_entry_line_item(
+                bill,
+                cost_entry,
+                product,
+                pricing,
+                reservation
+            )
+
+        bills = self.accessor.get_cost_entry_bills_query_by_provider(1)
+        bill_ids = [str(bill.id) for bill in bills.all()]
+
+        table_name = AWS_CUR_TABLE_MAP['line_item']
+        tag_query = self.accessor._get_db_obj_query(table_name)
+        possible_keys = []
+        possible_values = []
+        for item in tag_query:
+            possible_keys += list(item.tags.keys())
+            possible_values += list(item.tags.values())
+
+        ce_entry = ce_table.objects.all().first()
+        start_date = ce_entry.interval_start
+        end_date = ce_entry.interval_end
+
+        start_date = start_date.replace(hour=0, minute=0, second=0,
+                                        microsecond=0)
+        end_date = end_date.replace(hour=0, minute=0, second=0,
+                                        microsecond=0)
+
+        query = self.accessor._get_db_obj_query(summary_table_name)
+        initial_count = query.count()
+
+        self.accessor.populate_line_item_daily_table(start_date, end_date, bill_ids)
+        self.accessor.populate_line_item_daily_summary_table(start_date,
+                                                             end_date,
+                                                             bill_ids)
+
+        self.assertNotEqual(query.count(), initial_count)
+
+        summary_entry= summary_table.objects.first()
+        result_start_date = summary_entry.usage_start
+        result_end_date = summary_entry.usage_end
+
+        self.assertEqual(result_start_date, start_date)
+        self.assertEqual(result_end_date, end_date)
+
+        entry = query.order_by('-id').first()
+
+        summary_columns = [
+            'usage_start', 'usage_end', 'usage_account_id',
+            'product_code', 'product_family', 'availability_zone', 'region',
+            'instance_type', 'unit', 'resource_count', 'usage_amount',
+            'normalization_factor', 'normalized_usage_amount', 'currency_code',
+            'unblended_rate', 'unblended_cost', 'blended_rate', 'blended_cost',
+            'public_on_demand_cost', 'public_on_demand_rate', 'tags'
+        ]
+
+        for column in summary_columns:
+            self.assertIsNotNone(getattr(entry, column))
+
+        found_keys = []
+        found_values = []
+        for item in query.all():
+            found_keys += list(item.tags.keys())
+            found_values += list(item.tags.values())
+
+        self.assertEqual(set(sorted(possible_keys)), set(sorted(found_keys)))
+        self.assertEqual(set(sorted(possible_values)), set(sorted(found_values)))
+
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
+    def test_populate_awstags_summary_table(self, mock_vacuum):
         """Test that the AWS tags summary table is populated."""
         bill_ids = []
         ce_table_name = AWS_CUR_TABLE_MAP['cost_entry']
@@ -925,18 +908,17 @@ class ReportDBAccessorTest(MasuTestCase):
                     reservation
                 )
 
-        start_date, end_date = self.accessor._session.query(
-            func.min(ce_table.interval_start),
-            func.max(ce_table.interval_start)
-        ).first()
+        ce_entry = ce_table.objects.all().first()
+        start_date = ce_entry.interval_start
+        end_date = ce_entry.interval_end
 
         query = self.accessor._get_db_obj_query(tags_summary_name)
         initial_count = query.count()
 
         self.accessor.populate_line_item_daily_table(start_date, end_date, bill_ids)
         self.accessor.populate_line_item_daily_summary_table(start_date,
-                                                              end_date,
-                                                              bill_ids)
+                                                             end_date,
+                                                             bill_ids)
         self.accessor.populate_tags_summary_table()
 
         self.assertNotEqual(query.count(), initial_count)
@@ -953,7 +935,8 @@ class ReportDBAccessorTest(MasuTestCase):
 
         self.assertEqual(sorted(tag_keys), sorted(expected_tag_keys))
 
-    def test_populate_ocp_on_aws_cost_daily_summary(self):
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
+    def test_populate_ocp_on_aws_cost_daily_summary(self, mock_vacuum):
         """Test that the OCP on AWS cost summary table is populated."""
         summary_table_name = AWS_CUR_TABLE_MAP['ocp_on_aws_daily_summary']
         project_summary_table_name = AWS_CUR_TABLE_MAP['ocp_on_aws_project_daily_summary']
@@ -986,11 +969,9 @@ class ReportDBAccessorTest(MasuTestCase):
         li_table_name = AWS_CUR_TABLE_MAP['line_item']
         li_table = getattr(self.accessor.report_schema, li_table_name)
 
-        sum_aws_cost = self.accessor._session.query(
-            func.sum(li_table.unblended_cost)
-        ).first()
+        sum_aws_cost = li_table.objects.all().aggregate(Sum('unblended_cost'))
 
-        with OCPReportDBAccessor(self.test_schema, self.column_map) as ocp_accessor:
+        with OCPReportDBAccessor(self.schema, self.column_map) as ocp_accessor:
             cluster_id = self.ocp_provider_resource_name
             with ProviderDBAccessor(provider_uuid=self.ocp_test_provider_uuid) as provider_access:
                 provider_id = provider_access.get_provider().id
@@ -1014,13 +995,8 @@ class ReportDBAccessorTest(MasuTestCase):
 
         self.assertNotEqual(query.count(), initial_count)
 
-        sum_cost = self.accessor._session.query(
-            func.sum(summary_table.unblended_cost)
-        ).first()
-
-        sum_project_cost = self.accessor._session.query(
-            func.sum(project_table.unblended_cost)
-        ).first()
+        sum_cost = summary_table.aggregate(Sum('unblended_cost'))
+        sum_project_cost = project_table.aggregate(Sum('unblended_cost'))
 
         self.assertEqual(sum_cost, sum_project_cost)
         self.assertLessEqual(sum_cost, sum_aws_cost)

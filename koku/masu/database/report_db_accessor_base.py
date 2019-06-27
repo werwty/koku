@@ -427,7 +427,6 @@ class ReportDBAccessorBase(KokuDBAccess):
             LOG.info('Updating %s', table)
 
         self._cursor.execute(sql)
-        #self._pg2_conn.commit()
         self.vacuum_table(table)
         LOG.info('Finished updating %s.', table)
 
