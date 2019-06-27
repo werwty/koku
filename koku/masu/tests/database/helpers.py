@@ -58,9 +58,7 @@ class ReportObjectCreator:
         row.interval_start = self.stringify_datetime(start_datetime)
         row.interval_end = self.stringify_datetime(end_datetime)
         row.bill_id = bill.id
-
-        self.db_accessor._session.add(row)
-        self.db_accessor._session.commit()
+        row.save()
 
         return row
 

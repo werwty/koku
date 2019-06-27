@@ -350,7 +350,7 @@ class ReportDBAccessorBase(KokuDBAccess):
     def _get_primary_key(self, table_name, data):
         """Return the row id for a specific object."""
         query = self._get_db_obj_query(table_name)
-        query = query.filter_by(**data)
+        query = query.filter(**data)
         try:
             row_id = query.first().id
         except AttributeError as err:

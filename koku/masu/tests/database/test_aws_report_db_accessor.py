@@ -26,8 +26,9 @@ import uuid
 from unittest.mock import patch
 
 import psycopg2
-from dateutil import relativedelta
 import django.apps
+from dateutil import relativedelta
+from django.db.models.query import QuerySet
 from tenant_schemas.utils import schema_context
 
 
@@ -82,7 +83,7 @@ class ReportSchemaTest(MasuTestCase):
 
     def test_get_reporting_tables(self):
         """Test that the report schema is populated with a column map."""
-        tables = self.accessor.get_base().classes
+        tables = django.apps.apps.get_models()
         report_schema = ReportSchema(tables, self.column_map)
 
         report_schema._set_reporting_tables(
@@ -102,46 +103,54 @@ class ReportSchemaTest(MasuTestCase):
 
         table_types = column_types[random.choice(self.all_tables)]
 
-        python_types = list(types.__builtins__.values())
-        python_types.extend([datetime.datetime, Decimal])
-
+        django_field_types = [
+            'IntegerField', 'FloatField', 'JSONField',
+            'DateTimeField', 'DecimalField', 'CharField',
+            'TextField'
+        ]
         for table_type in table_types.values():
-            self.assertIn(table_type, python_types)
+            self.assertIn(table_type, django_field_types)
 
 
 class ReportDBAccessorTest(MasuTestCase):
     """Test Cases for the ReportDBAccessor object."""
 
-    @classmethod
-    def setUpClass(cls):
-        """Set up the test class with required objects."""
-        cls.common_accessor = ReportingCommonDBAccessor()
-        cls.column_map = cls.common_accessor.column_map
-        cls.accessor = AWSReportDBAccessor(
-            schema='acct10001',
-            column_map=cls.column_map
+    def run(self, result=None):
+        with schema_context('acct10001'):
+            super(ReportDBAccessorTest, self).run(result)
+
+
+    def setUp(self):
+        """"Set up a test with database objects."""
+        super().setUp()
+
+        self.common_accessor = ReportingCommonDBAccessor()
+        self.column_map = self.common_accessor.column_map
+        self.accessor = AWSReportDBAccessor(
+            schema=self.schema,
+            column_map=self.column_map
         )
-        cls.report_schema = cls.accessor.report_schema
-        cls.creator = ReportObjectCreator(
-            cls.accessor,
-            cls.column_map,
-            cls.report_schema.column_types
+        self.report_schema = self.accessor.report_schema
+        self.creator = ReportObjectCreator(
+            self.accessor,
+            self.column_map,
+            self.report_schema.column_types
         )
-        cls.all_tables = list(AWS_CUR_TABLE_MAP.values())
-        cls.foreign_key_tables = [
+        self.all_tables = list(AWS_CUR_TABLE_MAP.values())
+        self.foreign_key_tables = [
             AWS_CUR_TABLE_MAP['bill'],
             AWS_CUR_TABLE_MAP['product'],
             AWS_CUR_TABLE_MAP['pricing'],
             AWS_CUR_TABLE_MAP['reservation']
         ]
         billing_start = datetime.datetime.utcnow().replace(day=1)
-        cls.manifest_dict = {
+        self.manifest_dict = {
             'assembly_id': '1234',
             'billing_period_start_datetime': billing_start,
             'num_total_files': 2,
             'provider_id': 1
         }
-        cls.manifest_accessor = ReportManifestDBAccessor()
+        self.manifest_accessor = ReportManifestDBAccessor()
 
     def setUp(self):
         """"Set up a test with database objects."""
@@ -187,8 +196,6 @@ class ReportDBAccessorTest(MasuTestCase):
     def test_initializer(self):
         """Test initializer."""
         self.assertIsNotNone(self.report_schema)
-        self.assertIsNotNone(self.accessor._session)
-        self.assertIsNotNone(self.accessor._conn)
         self.assertIsNotNone(self.accessor._cursor)
 
     def test_get_psycopg2_connection(self):
@@ -362,7 +369,7 @@ class ReportDBAccessorTest(MasuTestCase):
 
         query = self.accessor._get_db_obj_query(table_name)
 
-        self.assertIsInstance(query, Query)
+        self.assertIsInstance(query, QuerySet)
 
     def test_get_db_obj_query_with_columns(self):
         """Test that a query is returned with limited columns."""
@@ -540,10 +547,8 @@ class ReportDBAccessorTest(MasuTestCase):
         """Test that a primary key is returned."""
         table_name = random.choice(self.foreign_key_tables)
         data = self.creator.create_columns_for_table(table_name)
-        table = self.accessor.create_db_object(table_name, data)
-        self.accessor._session.add(table)
-        self.accessor._session.commit()
-
+        obj = self.accessor.create_db_object(table_name, data)
+        obj.save()
 
         p_key = self.accessor._get_primary_key(table_name, data)
 
@@ -551,11 +556,11 @@ class ReportDBAccessorTest(MasuTestCase):
 
     def test_get_primary_key_attribute_error(self):
         """Test that an AttributeError is raised on bad primary key lookup."""
-        table_name = table_name = AWS_CUR_TABLE_MAP['product']
+
+        table_name = AWS_CUR_TABLE_MAP['product']
         data = self.creator.create_columns_for_table(table_name)
-        table = self.accessor.create_db_object(table_name, data)
-        self.accessor._session.add(table)
-        self.accessor._session.commit()
+        obj = self.accessor.create_db_object(table_name, data)
+        obj.save()
 
         data['sku'] = ''.join([random.choice(string.digits) for _ in range(5)])
         with self.assertRaises(AttributeError):
@@ -563,7 +568,7 @@ class ReportDBAccessorTest(MasuTestCase):
 
     def test_flush_db_object(self):
         """Test that the database flush moves the object to the database."""
-        self.accessor._session.commit()
+
         table = random.choice(self.foreign_key_tables)
         data = self.creator.create_columns_for_table(table)
         initial_row_count = self.accessor._get_db_obj_query(table).count()
@@ -574,12 +579,10 @@ class ReportDBAccessorTest(MasuTestCase):
 
         row_count = self.accessor._get_db_obj_query(table).count()
         self.assertTrue(row_count > initial_row_count)
-        self.accessor._session.rollback()
-        final_row_count = self.accessor._get_db_obj_query(table).count()
-        self.assertEqual(initial_row_count, final_row_count)
 
     def test_clean_data(self):
         """Test that data cleaning produces proper data types."""
+
         table_name = random.choice(self.all_tables)
         column_types = self.report_schema.column_types[table_name]
 
