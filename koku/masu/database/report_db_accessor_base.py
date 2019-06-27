@@ -19,10 +19,12 @@
 import logging
 import uuid
 from decimal import Decimal, InvalidOperation
-
+import datetime
 import psycopg2
+from django.db import connection, transaction
 
 import django.apps
+from tenant_schemas.utils import schema_context
 
 from masu.config import Config
 from masu.database.koku_database_access import KokuDBAccess
@@ -75,7 +77,7 @@ class ReportDBAccessorBase(KokuDBAccess):
         self.column_map = column_map
         self.report_schema = ReportSchema(django.apps.apps.get_models(),
                                           self.column_map)
-        self._pg2_conn = self._get_psycopg2_connection()
+        #self._pg2_conn = self._get_psycopg2_connection()
         self._cursor = self._get_psycopg2_cursor()
 
     def __exit__(self, exception_type, exception_value, traceback):
@@ -89,13 +91,14 @@ class ReportDBAccessorBase(KokuDBAccess):
         return f'0E-{Config.REPORTING_DECIMAL_PRECISION}'
 
     # pylint: disable=no-self-use
-    def _get_psycopg2_connection(self):
-        """Get a low level database connection."""
-        return psycopg2.connect(Config.SQLALCHEMY_DATABASE_URI)
+    #def _get_psycopg2_connection(self):
+    #    """Get a low level database connection."""
+    #    return psycopg2.connect(Config.SQLALCHEMY_DATABASE_URI)
 
     def _get_psycopg2_cursor(self):
         """Get a cursor for the low level database connection."""
-        cursor = self._pg2_conn.cursor()
+        #cursor = self._pg2_conn.cursor()
+        cursor = connection.cursor()
         cursor.execute(f'SET search_path TO {self.schema}')
         return cursor
 
@@ -109,7 +112,6 @@ class ReportDBAccessorBase(KokuDBAccess):
             self._cursor.execute(
                 f'ALTER TABLE {temp_table_name} DROP COLUMN {drop_column}'
             )
-
         return temp_table_name
 
     def create_new_temp_table(self, table_name, columns):
@@ -156,7 +158,7 @@ class ReportDBAccessorBase(KokuDBAccess):
                 SET {set_clause}
             """
         self._cursor.execute(update_sql)
-        self._pg2_conn.commit()
+        #self._pg2_conn.commit()
 
         row_count = self._cursor.rowcount
         if row_count > 0:
@@ -170,24 +172,24 @@ class ReportDBAccessorBase(KokuDBAccess):
                 ON CONFLICT DO NOTHING
         """
         self._cursor.execute(insert_sql)
-        self._pg2_conn.commit()
+
+        #self._pg2_conn.commit()
 
         delete_sql = f'DELETE FROM {temp_table_name}'
         self._cursor.execute(delete_sql)
-        self._pg2_conn.commit()
+        #self._pg2_conn.commit()
         self.vacuum_table(temp_table_name)
 
         return is_finalized_data
 
     def vacuum_table(self, table_name):
         """Vacuum a table outside of a transaction."""
-        isolation_level = self._pg2_conn.isolation_level
-        self._pg2_conn.set_isolation_level(
-            psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT
-        )
-        vacuum = f'VACUUM {table_name}'
+
+        old_isolation_level = connection.connection.isolation_level
+        connection.connection.set_isolation_level(0)
+        vacuum = f'VACUUM {self.schema}.{table_name}'
         self._cursor.execute(vacuum)
-        self._pg2_conn.set_isolation_level(isolation_level)
+        connection.connection.set_isolation_level(old_isolation_level)
 
     # pylint: disable=too-many-arguments
     def bulk_insert_rows(self, file_obj, table, columns, sep='\t', null=''):
@@ -208,7 +210,7 @@ class ReportDBAccessorBase(KokuDBAccess):
             columns=columns,
             null=null
         )
-        self._pg2_conn.commit()
+        #self._pg2_conn.commit()
 
     def close_connections(self, conn=None):
         """Close the low level database connection.
@@ -236,21 +238,15 @@ class ReportDBAccessorBase(KokuDBAccess):
             (Query): A SQLAlchemy query object
 
         """
-        with schema_context(self.schema):
+        # If table is a str, get te model associated
+        if isinstance(table, str):
+            table = getattr(self.report_schema, table)
 
-            if isinstance(table, str):
-                table_name=table
-            else:
-                table_name = getattr(self.report_schema, table._meta.db_table)
-            import ipdb; ipdb.set_trace()
-            model = getattr(self.report_schema, table_name)
-            query = model.objects.all()
+        query = table.objects.all()
+        if columns:
+            query = query.values(*columns)
 
-            if columns:
-                entities = [getattr(table_name, column) for column in columns]
-                query = model.values(*entities)
-
-            return query
+        return query
 
     def create_db_object(self, table_name, data):
         """Instantiate a populated database object.
@@ -288,16 +284,19 @@ class ReportDBAccessorBase(KokuDBAccess):
 
         """
         data = self.clean_data(data, table_name)
-        table = getattr(self.report_schema, table_name)
-        data_formatted = ','.join(data)
+        columns_formatted = ', '.join(str(value) for value in data.keys())
+        data_formatted = ', '.join("'{}'".format(str(value)) for value in data.values())
+        insert_sql = f"""INSERT INTO {table_name}({columns_formatted}) VALUES({data_formatted})"""
 
-        conflict_columns_formatted = ','.join(data)
-        insert_sql = f"""
-                    INSERT INTO {table} ({data_formatted})                       
-                        ON CONFLICT ({conflict_columns_formatted}) DO NOTHING
-                """
+        if conflict_columns:
+            conflict_columns_formatted = ', '.join(conflict_columns)
+            insert_sql = insert_sql + \
+                         f" ON CONFLICT ({conflict_columns_formatted}) DO NOTHING;"
+        else:
+            insert_sql = insert_sql + " ON CONFLICT DO NOTHING;"
+
         self._cursor.execute(insert_sql)
-        self._pg2_conn.commit()
+        #self._pg2_conn.commit()
 
         if conflict_columns:
             data = {key: value for key, value in data.items()
@@ -328,19 +327,19 @@ class ReportDBAccessorBase(KokuDBAccess):
         data = self.clean_data(data, table_name)
         set_data = {key: value for key, value in data.items()
                     if key in set_columns}
-        formatted_set = ", ".join("{} = {}".format(key, value) for key, value in set_data.items())
-        table = getattr(self.report_schema, table_name)
+        formatted_set = ", ".join("{} = '{}'".format(key, str(value)) for key, value in set_data.items())
 
-        data_formatted = ','.join(str(x) for x in data.values())
-        conflict_columns_formatted = ','.join(data)
+        columns_formatted = ', '.join(str(value) for value in data.keys())
+        data_formatted = ', '.join("'{}'".format(str(value)) for value in data.values())
+        conflict_columns_formatted = ', '.join(conflict_columns)
 
         insert_sql = f"""
-        INSERT INTO {table} ({data_formatted})  
+        INSERT INTO {table_name}({columns_formatted}) VALUES ({data_formatted})  
         ON CONFLICT ({conflict_columns_formatted}) DO UPDATE SET 
-        ({formatted_set})
+        {formatted_set}
         """
         self._cursor.execute(insert_sql)
-        self._pg2_conn.commit()
+        #self._pg2_conn.commit()
 
         data = {key: value for key, value in data.items()
                 if key in conflict_columns}
@@ -428,6 +427,29 @@ class ReportDBAccessorBase(KokuDBAccess):
             LOG.info('Updating %s', table)
 
         self._cursor.execute(sql)
-        self._pg2_conn.commit()
+        #self._pg2_conn.commit()
         self.vacuum_table(table)
         LOG.info('Finished updating %s.', table)
+
+    def map_django_field_type_to_python_type(self, field):
+        """
+
+        :param field:
+        :return:
+        """
+        # This catches serveral different types of IntegerFields such as:
+        # PositiveIntegerField, BigIntegerField,
+        if 'IntegerField' in field:
+            type = int
+        elif field == 'FloatField':
+            type = float
+        elif field == 'JSONField':
+            type = dict
+        elif field == 'DateTimeField':
+            type = datetime.datetime
+        elif field == 'DecimalField':
+            type = Decimal
+        else:
+            type = str
+
+        return type

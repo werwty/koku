@@ -26,11 +26,13 @@ from decimal import Decimal
 
 from dateutil import relativedelta
 from faker import Faker
+from tenant_schemas.utils import schema_context
 
 from masu.config import Config
 from masu.database import AWS_CUR_TABLE_MAP, OCP_REPORT_TABLE_MAP
 from masu.database.provider_db_accessor import ProviderDBAccessor
-
+from reporting.models import OCPAWSCostLineItemProjectDailySummary
+from masu.database.account_alias_accessor import AccountAliasAccessor
 
 # A subset of AWS product family values
 AWS_PRODUCT_FAMILY = ['Storage', 'Compute Instance',
@@ -281,16 +283,64 @@ class ReportObjectCreator:
                 'uuid': str(uuid.uuid4())}
 
         rate_obj = self.db_accessor.create_db_object(table_name, data)
-
-        self.db_accessor._session.add(rate_obj)
-        self.db_accessor._session.commit()
+        rate_obj.save()
 
         rate_map_table = OCP_REPORT_TABLE_MAP['rate_map']
         provider_obj = ProviderDBAccessor(provider_uuid).get_provider()
         data = {'provider_uuid': provider_obj.uuid, 'rate_id': rate_obj.id}
         rate_map_obj = self.db_accessor.create_db_object(rate_map_table, data)
-
-        self.db_accessor._session.add(rate_map_obj)
-        self.db_accessor._session.commit()
-
+        rate_map_obj.save()
         return rate_obj
+
+    def create_ocpawscostlineitem_project_daily_summary(self, account_id, schema):
+        """Create an ocpawscostlineitem_project_daily_summary( object for test."""
+
+        table_name = AWS_CUR_TABLE_MAP['ocp_on_aws_project_daily_summary']
+        data = self.create_columns_for_table(table_name)
+        row = self.db_accessor.create_db_object(table_name, data)
+
+        accessor = AccountAliasAccessor(account_id, schema)
+        with schema_context(schema):
+            account_alias = accessor._get_db_obj_query().first()
+
+            row.account_alias = account_alias
+            row.cost_entry_bill = self.create_cost_entry_bill()
+            row.namespace = self.fake.pystr()[:8]
+            row.pod = self.fake.pystr()[:8]
+            row.node = self.fake.pystr()[:8]
+            row.usage_start = self.stringify_datetime(
+                    self.fake.past_datetime()
+                )
+            row.usage_end = self.stringify_datetime(
+                    self.fake.past_datetime()
+                )
+            row.product_code = self.fake.pystr()[:8]
+            row.usage_account_id = self.fake.pystr()[:8]
+
+            row.save()
+
+        return row
+
+    def create_awscostentrylineitem_daily_summary(self, account_id, schema):
+        """Create an ocpawscostlineitem_project_daily_summary( object for test."""
+
+        table_name = AWS_CUR_TABLE_MAP['line_item_daily_summary']
+        data = self.create_columns_for_table(table_name)
+
+        row = self.db_accessor.create_db_object(table_name, data)
+
+        accessor = AccountAliasAccessor(account_id, schema)
+        with schema_context(schema):
+            account_alias = accessor._get_db_obj_query().first()
+
+            row.account_alias = account_alias
+            row.cost_entry_bill = self.create_cost_entry_bill()
+            row.usage_start = self.stringify_datetime(
+                    self.fake.past_datetime()
+                )
+            row.product_code = self.fake.pystr()[:8]
+            row.usage_account_id = self.fake.pystr()[:8]
+
+            row.save()
+
+        return row

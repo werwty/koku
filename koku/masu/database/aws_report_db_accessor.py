@@ -54,9 +54,8 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
 
         columns = ['id', 'bill_type', 'payer_account_id', 'billing_period_start', 'provider_id']
         bills = self._get_db_obj_query(table).values(*columns)
-
-        return {(bill.bill_type, bill.payer_account_id,
-                 bill.billing_period_start, bill.provider_id): bill.id
+        return {(bill['bill_type'], bill['payer_account_id'],
+                 bill['billing_period_start'], bill['provider_id']): bill['id']
                 for bill in bills}
 
     def get_cost_entry_bills_by_date(self, start_date):
@@ -85,12 +84,8 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
     def get_bill_query_before_date(self, date):
         """Get the cost entry bill objects with billing period before provided date."""
         table = AWSCostEntryBill
-        billing_start = getattr(
-            getattr(self.report_schema, table),
-            'billing_period_start'
-        )
         kwargs = {
-            '{0}__{1}'.format(billing_start, 'leq'): date,
+            'billing_period_start__{0}'.format('lte'): date,
         }
         base_query = self._get_db_obj_query(table)
         cost_entry_bill_query = base_query.filter(**kwargs)
@@ -99,12 +94,8 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
     def get_lineitem_query_for_billid(self, bill_id):
         """Get the AWS cost entry line item for a given bill query."""
         table_name = AWS_CUR_TABLE_MAP['line_item']
-        cost_entry_bill_id = getattr(
-            getattr(self.report_schema, table_name),
-            'cost_entry_bill_id'
-        )
         kwargs = {
-            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+            'cost_entry_bill_id': bill_id,
         }
         base_query = self._get_db_obj_query(table_name)
         line_item_query = base_query.filter(**kwargs)
@@ -113,12 +104,8 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
     def get_daily_query_for_billid(self, bill_id):
         """Get the AWS cost daily item for a given bill query."""
         table_name = AWS_CUR_TABLE_MAP['line_item_daily']
-        cost_entry_bill_id = getattr(
-            getattr(self.report_schema, table_name),
-            'cost_entry_bill_id'
-        )
         kwargs = {
-            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+            'cost_entry_bill_id': bill_id,
         }
         base_query = self._get_db_obj_query(table_name)
         daily_item_query = base_query.filter(**kwargs)
@@ -127,12 +114,8 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
     def get_summary_query_for_billid(self, bill_id):
         """Get the AWS cost summary item for a given bill query."""
         table_name = AWS_CUR_TABLE_MAP['line_item_daily_summary']
-        cost_entry_bill_id = getattr(
-            getattr(self.report_schema, table_name),
-            'cost_entry_bill_id'
-        )
         kwargs = {
-            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+            'cost_entry_bill_id': bill_id,
         }
         base_query = self._get_db_obj_query(table_name)
         summary_item_query = base_query.filter(**kwargs)
@@ -141,12 +124,8 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
     def get_ocp_aws_summary_query_for_billid(self, bill_id):
         """Get the OCP-on-AWS report summary item for a given bill query."""
         table_name = AWS_CUR_TABLE_MAP['ocp_on_aws_daily_summary']
-        cost_entry_bill_id = getattr(
-            getattr(self.report_schema, table_name),
-            'cost_entry_bill_id'
-        )
         kwargs = {
-            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+            'cost_entry_bill_id': bill_id,
         }
         base_query = self._get_db_obj_query(table_name)
         summary_item_query = base_query.filter(**kwargs)
@@ -155,12 +134,8 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
     def get_ocp_aws_project_summary_query_for_billid(self, bill_id):
         """Get the OCP-on-AWS report project summary item for a given bill query."""
         table_name = AWS_CUR_TABLE_MAP['ocp_on_aws_project_daily_summary']
-        cost_entry_bill_id = getattr(
-            getattr(self.report_schema, table_name),
-            'cost_entry_bill_id'
-        )
         kwargs = {
-            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+            'cost_entry_bill_id': bill_id,
         }
         base_query = self._get_db_obj_query(table_name)
         summary_item_query = base_query.filter(**kwargs)
@@ -169,13 +144,8 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
     def get_cost_entry_query_for_billid(self, bill_id):
         """Get the AWS cost entry data for a given bill query."""
         table_name = AWS_CUR_TABLE_MAP['cost_entry']
-
-        cost_entry_bill_id = getattr(
-            getattr(self.report_schema, table_name),
-            'bill_id'
-        )
         kwargs = {
-            '{0}__{1}'.format(cost_entry_bill_id, 'eq'): bill_id,
+            'bill_id': bill_id,
         }
         base_query = self._get_db_obj_query(table_name)
         line_item_query = base_query.filter(**kwargs)
@@ -195,7 +165,7 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
         columns = ['id', 'sku', 'product_name', 'region']
         products = self._get_db_obj_query(table_name, columns=columns).all()
 
-        return {(product.sku, product.product_name, product.region): product.id
+        return {(product['sku'], product['product_name'], product['region']): product['id']
                 for product in products}
 
     def get_pricing(self):
@@ -212,7 +182,7 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
         columns = ['id', 'reservation_arn']
         reservs = self._get_db_obj_query(table_name, columns=columns).all()
 
-        return {res.reservation_arn: res.id for res in reservs}
+        return {res['reservation_arn']: res['id'] for res in reservs}
 
     def populate_line_item_daily_table(self, start_date, end_date, bill_ids):
         """Populate the daily aggregate of line items table.
