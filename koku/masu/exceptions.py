@@ -14,22 +14,24 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-
-"""Test the ProviderDBAccessor utility object."""
-
-from masu.database.provider_collector import ProviderCollector
-from masu.tests import MasuTestCase
+"""Masu Processor Exceptions."""
 
 
-class ProviderQueryTest(MasuTestCase):
-    """Test Cases for the ProviderDBAccessor object."""
+class MasuProcessingError(Exception):
+    """Masu Processing Error."""
 
-    def test_get_uuids(self):
-        """Test getting all uuids."""
-        collector = ProviderCollector()
-        providers = collector.get_providers()
-        test_provider_found = False
-        for provider in providers:
-            if '6e212746-484a-40cd-bba0-09a19d132d64' in provider.uuid:
-                test_provider_found = True
-        self.assertTrue(test_provider_found)
+
+class MasuProviderError(Exception):
+    """Masu Provider Error."""
+
+
+class MasuConfigurationError(Exception):
+    """Masu Configuration Error."""
+
+
+class CURAccountsInterfaceError(Exception):
+    """CURAccountsInterface error."""
+
+
+class HasherError(Exception):
+    """Hasher Utility class error."""

@@ -200,6 +200,7 @@ class AWSReportDBAccessor(ReportDBAccessorBase):
             'masu.database',
             'sql/reporting_awscostentrylineitem_daily.sql'
         )
+
         daily_sql = daily_sql.decode('utf-8').format(
             uuid=str(uuid.uuid4()).replace('-', '_'),
             start_date=start_date,
