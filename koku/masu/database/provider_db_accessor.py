@@ -49,16 +49,11 @@ class ProviderDBAccessor(KokuDBAccess):
         Returns:
             (sqlalchemy.orm.query.Query): "SELECT public.api_customer.group_ptr_id ..."
         """
-        query = None
-        if self._auth_id and not self._uuid:
-            query = self._table.objects.filter(authentication_id=self._auth_id)
-        elif self._uuid and not self._auth_id:
-            query = self._table.objects.filter(uuid=self._uuid)
-        elif self._uuid and self._auth_id:
-            query = self._table.objects.filter(uuid=self._uuid, authentication_id=self._auth_id)
-        else:
-            query = self._table.objects.all()
-
+        query = self._table.objects.all()
+        if self._auth_id:
+            query = query.filter(authentication_id=self._auth_id)
+        if self._uuid:
+            query = query.filter(uuid=self._uuid)
         return query
 
     def does_db_entry_exist(self):
@@ -70,7 +65,7 @@ class ProviderDBAccessor(KokuDBAccess):
         Returns:
             (Boolean): "True/False",
         """
-        return bool(self._get_db_obj_query().first())
+        return self._get_db_obj_query().exists()
 
     def get_provider(self):
         """Return the provider."""
@@ -170,7 +165,7 @@ class ProviderDBAccessor(KokuDBAccess):
         """
         obj = self._get_db_obj_query().first()
         obj.setup_complete = True
-        obj.save()  #TODO: Come back to this when the context manager is worked out
+        obj.save()
 
     def get_customer_uuid(self):
         """

@@ -88,5 +88,5 @@ class ReportingCommonDBAccessor(KokuDBAccess):
 
         """
         getattr(self, f'_{table.lower()}').create(**fields)
-        #if use_savepoint:
-        #    self.savepoint(self._session.add, new)
+        if use_savepoint:
+            self.savepoint(self.add, table=table, field=fields)

@@ -19,6 +19,7 @@
 import enum
 import logging
 
+from api.provider.models import ProviderStatus
 from masu.database.koku_database_access import KokuDBAccess
 from masu.database.provider_db_accessor import ProviderDBAccessor
 from masu.exceptions import MasuProviderError
@@ -57,7 +58,7 @@ class ProviderStatusAccessor(KokuDBAccess):
         """
         super().__init__(schema)
         self._provider_uuid = provider_uuid
-        self._table = self.get_base().classes.api_providerstatus
+        self._table = ProviderStatus
 
         with ProviderDBAccessor(self._provider_uuid) as provider_accessor:
             provider = provider_accessor.get_provider()
@@ -77,8 +78,8 @@ class ProviderStatusAccessor(KokuDBAccess):
                             'last_message': 'none',
                             'timestamp': DateAccessor().today(),
                             'retries': 0}
-            self.add(**ready_status)
-            self.commit()
+            obj = self.add(**ready_status)
+            obj.save()
             self._obj = self._get_db_obj_query().first()
 
     # pylint: disable=arguments-differ
@@ -120,7 +121,7 @@ class ProviderStatusAccessor(KokuDBAccess):
 
     def get_last_message(self):
         """
-        Return the provider last_message.
+        Return the provider last_message.provider_uuid
 
         Args:
             None

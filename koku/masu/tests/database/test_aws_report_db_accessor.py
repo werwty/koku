@@ -23,7 +23,6 @@ import string
 import uuid
 from unittest.mock import patch
 
-import psycopg2
 import django.apps
 from dateutil import relativedelta
 from django.db import connection

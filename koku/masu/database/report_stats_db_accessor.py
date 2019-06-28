@@ -122,7 +122,7 @@ class ReportStatsDBAccessor(KokuDBAccess):
         Update a CUR statistics record in the database.
 
         Args:
-            cursor_position (Integer): Byte offset of the last position processed in a CUR
+            cursor_position (Integer): Byte offset of the last position processed in a CUR (deprecated)
             last_completed_datetime (DateTime): Timestamp for the time processing completed.
             last_started_datetime (DateTime): Timestamp for the time processing started.
             etag (String): MD5 hash of the CUR file.
@@ -132,8 +132,6 @@ class ReportStatsDBAccessor(KokuDBAccess):
 
         """
         obj_to_update = self._obj
-        #if cursor_position:
-        #    obj_to_update.cursor_position = cursor_position
         if last_completed_datetime:
             obj_to_update.last_completed_datetime = last_completed_datetime
         if last_started_datetime:

@@ -224,7 +224,7 @@ class ReportDBAccessorBase(KokuDBAccess):
             conn.close()
         else:
             self._cursor.close()
-            self._pg2_conn.close()
+            #self._pg2_conn.close()
 
     # pylint: disable=arguments-differ
     def _get_db_obj_query(self, table, columns=None):
