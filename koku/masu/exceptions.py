@@ -14,20 +14,24 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""SQLAlchemy database engine creation."""
-from tempfile import NamedTemporaryFile
+"""Masu Processor Exceptions."""
 
 
-def create_engine():
-    """Create a database engine to manage DB connections.
-
-    Args:
-        None
-    Returns:
-        (sqlalchemy.engine.base.Engine): "SQLAlchemy engine object",
-        (sqlalchemy.sql.schema.MetaData): "SQLAlchemy engine metadata"
-    """
-    return None
+class MasuProcessingError(Exception):
+    """Masu Processing Error."""
 
 
-DB_ENGINE = create_engine()
+class MasuProviderError(Exception):
+    """Masu Provider Error."""
+
+
+class MasuConfigurationError(Exception):
+    """Masu Configuration Error."""
+
+
+class CURAccountsInterfaceError(Exception):
+    """CURAccountsInterface error."""
+
+
+class HasherError(Exception):
+    """Hasher Utility class error."""

@@ -18,7 +18,7 @@
 """Test the CustomerDBAccessor utility object."""
 
 from masu.database.customer_db_accessor import CustomerDBAccessor
-from tests import MasuTestCase
+from masu.tests import MasuTestCase
 
 
 class CustomerDBAccessorTest(MasuTestCase):

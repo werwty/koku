@@ -18,17 +18,11 @@
 """Test the ProviderDBAccessor utility object."""
 
 from masu.database.provider_collector import ProviderCollector
-from tests import MasuTestCase
+from masu.tests import MasuTestCase
 
 
 class ProviderQueryTest(MasuTestCase):
     """Test Cases for the ProviderDBAccessor object."""
-
-    def test_initializer(self):
-        """Test Initializer"""
-        collector = ProviderCollector()
-        self.assertIsNotNone(collector._session)
-        collector.close_session()
 
     def test_get_uuids(self):
         """Test getting all uuids."""
@@ -39,4 +33,3 @@ class ProviderQueryTest(MasuTestCase):
             if '6e212746-484a-40cd-bba0-09a19d132d64' in provider.uuid:
                 test_provider_found = True
         self.assertTrue(test_provider_found)
-        collector.close_session()

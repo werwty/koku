@@ -26,7 +26,7 @@ from masu.database.provider_status_accessor import (ProviderStatusAccessor,
 from masu.database.provider_db_accessor import ProviderDBAccessor
 from masu.exceptions import MasuProviderError
 from masu.external.date_accessor import DateAccessor
-from tests import MasuTestCase
+from masu.tests import MasuTestCase
 
 
 class ProviderStatusAccessorTest(MasuTestCase):
@@ -55,8 +55,8 @@ class ProviderStatusAccessorTest(MasuTestCase):
                             'retries': random.randint(0, 10)}
 
         with ProviderStatusAccessor(self.aws_test_provider_uuid) as accessor:
-            accessor.add(**self.test_status)
-            accessor.commit()
+            status = accessor.add(**self.test_status)
+            status.save()
 
     def test_init(self):
         """Test __init__() when a status is in the DB."""

@@ -18,7 +18,8 @@
 
 
 from masu.database.koku_database_access import KokuDBAccess
-
+from reporting.models import AWSAccountAlias
+from tenant_schemas.utils import schema_context
 
 class AccountAliasAccessor(KokuDBAccess):
     """Class to interact with the koku database for account allias information."""
@@ -33,12 +34,13 @@ class AccountAliasAccessor(KokuDBAccess):
         """
         super().__init__(schema)
         self._account_id = account_id
-        self._table = self.get_base().classes.reporting_awsaccountalias
+        self._table = AWSAccountAlias
 
         if self.does_db_entry_exist() is False:
             self.add(self._account_id)
 
-        self._obj = self._get_db_obj_query().first()
+        with schema_context(self.schema):
+            self._obj = self._get_db_obj_query().first()
 
     # pylint: disable=arguments-differ
     def _get_db_obj_query(self):
@@ -75,4 +77,6 @@ class AccountAliasAccessor(KokuDBAccess):
             None
 
         """
-        self._obj.account_alias = alias
+        with schema_context(self.schema):
+            self._obj.account_alias = alias
+            self._obj.save()
