@@ -19,6 +19,8 @@
 import datetime
 from dateutil import relativedelta
 
+from tenant_schemas.utils import schema_context
+
 from masu.database import AWS_CUR_TABLE_MAP
 from masu.database.aws_report_db_accessor import AWSReportDBAccessor
 from masu.processor.aws.aws_report_db_cleaner import (
@@ -26,20 +28,22 @@ from masu.processor.aws.aws_report_db_cleaner import (
     AWSReportDBCleanerError,
 )
 from masu.database.reporting_common_db_accessor import ReportingCommonDBAccessor
-from tests import MasuTestCase
-from tests.database.helpers import ReportObjectCreator
+from masu.test import MasuTransactionTestCase
+from masu.test.database.helpers import ReportObjectCreator
 
 
-class AWSReportDBCleanerTest(MasuTestCase):
+class AWSReportDBCleanerTest(MasuTransactionTestCase):
     """Test Cases for the AWSReportDBCleaner object."""
 
     @classmethod
     def setUpClass(cls):
         """Set up the test class with required objects."""
+        super().setUpClass()
+
         cls.common_accessor = ReportingCommonDBAccessor()
         cls.column_map = cls.common_accessor.column_map
         cls.accessor = AWSReportDBAccessor(
-            schema='acct10001', column_map=cls.column_map
+            schema=cls.schema, column_map=cls.column_map
         )
         cls.report_schema = cls.accessor.report_schema
         cls.creator = ReportObjectCreator(
@@ -55,36 +59,38 @@ class AWSReportDBCleanerTest(MasuTestCase):
 
     @classmethod
     def tearDownClass(cls):
+        super().tearDownClass()
         """Close the DB session."""
         cls.common_accessor.close_session()
         cls.accessor.close_session()
 
     def setUp(self):
         """"Set up a test with database objects."""
-        bill_id = self.creator.create_cost_entry_bill()
-        cost_entry_id = self.creator.create_cost_entry(bill_id)
-        product_id = self.creator.create_cost_entry_product()
-        pricing_id = self.creator.create_cost_entry_pricing()
-        reservation_id = self.creator.create_cost_entry_reservation()
-        self.creator.create_cost_entry_line_item(
-            bill_id, cost_entry_id, product_id, pricing_id, reservation_id
+        super().setUp()
+        self.bill_id = self.creator.create_cost_entry_bill()
+        self.cost_entry_id = self.creator.create_cost_entry(self.bill_id)
+        self.product_id = self.creator.create_cost_entry_product()
+        self.pricing_id = self.creator.create_cost_entry_pricing()
+        self.reservation_id = self.creator.create_cost_entry_reservation()
+        self.cost_entry_line_item = self.creator.create_cost_entry_line_item(
+            self.bill_id, self.cost_entry_id, self.product_id, self.pricing_id, self.reservation_id
         )
 
     def tearDown(self):
         """Return the database to a pre-test state."""
-        self.accessor._session.rollback()
+        super().tearDown()
 
-        for table_name in self.all_tables:
-            tables = self.accessor._get_db_obj_query(table_name).all()
-            for table in tables:
-                self.accessor._session.delete(table)
-        self.accessor.commit()
+        # Order matters here; foreign key relations are protected.
+        self.cost_entry_line_item.delete()
+        self.reservation_id.delete()
+        self.pricing_id.delete()
+        self.product_id.delete()
+        self.cost_entry_id.delete()
+        self.bill_id.delete()
 
     def test_initializer(self):
         """Test initializer."""
         self.assertIsNotNone(self.report_schema)
-        self.assertIsNotNone(self.accessor._session)
-        self.assertIsNotNone(self.accessor._conn)
         self.assertIsNotNone(self.accessor._cursor)
 
     def test_purge_expired_report_data_on_date(self):
@@ -93,7 +99,7 @@ class AWSReportDBCleanerTest(MasuTestCase):
         line_item_table_name = AWS_CUR_TABLE_MAP['line_item']
         cost_entry_table_name = AWS_CUR_TABLE_MAP['cost_entry']
 
-        cleaner = AWSReportDBCleaner('acct10001')
+        cleaner = AWSReportDBCleaner(self.schema)
 
         # Verify that data is cleared for a cutoff date == billing_period_start
         first_bill = self.accessor._get_db_obj_query(bill_table_name).first()

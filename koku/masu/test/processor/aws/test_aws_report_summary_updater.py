@@ -33,11 +33,11 @@ from masu.external.date_accessor import DateAccessor
 from masu.processor.aws.aws_report_summary_updater import AWSReportSummaryUpdater
 from masu.processor.report_summary_updater import ReportSummaryUpdater
 
-from tests import MasuTestCase
-from tests.database.helpers import ReportObjectCreator
+from masu.test import MasuTransactionTestCase
+from masu.test.database.helpers import ReportObjectCreator
 
 
-class AWSReportSummaryUpdaterTest(MasuTestCase):
+class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
     """Test cases for the AWSReportSummaryUpdater class."""
 
     @classmethod

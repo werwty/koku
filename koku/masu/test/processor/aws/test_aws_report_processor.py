@@ -16,7 +16,6 @@
 #
 
 """Test the AWSReportProcessor."""
-from collections import defaultdict
 import csv
 import copy
 import datetime
@@ -28,30 +27,29 @@ import logging
 import random
 import shutil
 import tempfile
-import psycopg2
+from unittest.mock import patch
 
-from sqlalchemy.sql.expression import delete
-from sqlalchemy.sql import func
 
 from masu.config import Config
 from masu.database import AWS_CUR_TABLE_MAP
 from masu.database.aws_report_db_accessor import AWSReportDBAccessor
 from masu.database.report_manifest_db_accessor import ReportManifestDBAccessor
 from masu.database.report_stats_db_accessor import ReportStatsDBAccessor
-from tests.database.helpers import ReportObjectCreator
+from masu.test.database.helpers import ReportObjectCreator
 from masu.database.reporting_common_db_accessor import ReportingCommonDBAccessor
 from masu.exceptions import MasuProcessingError
 from masu.external import GZIP_COMPRESSED, UNCOMPRESSED
 from masu.external.date_accessor import DateAccessor
 from masu.processor.aws.aws_report_processor import AWSReportProcessor, ProcessedReport
 import masu.util.common as common_util
-from tests import MasuTestCase
+from masu.test import MasuTransactionTestCase
 
 
-class ProcessedReportTest(MasuTestCase):
+class ProcessedReportTest(MasuTransactionTestCase):
     @classmethod
     def setUpClass(cls):
         """Set up the test class with required objects."""
+        super().setUpClass()
         cls.report = ProcessedReport()
 
     def test_remove_processed_rows(self):
@@ -216,7 +214,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=self.test_report_gzip,
             compression=GZIP_COMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
         report_db = self.accessor
         report_schema = report_db.report_schema
@@ -247,7 +245,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=self.test_report,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
 
         # Process for the first time
@@ -267,7 +265,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=self.test_report,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
         # Process for the second time
         processor.process()
@@ -302,7 +300,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=self.test_report,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
 
         # Process for the first time
@@ -325,7 +323,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=tmp_file,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
         # Process for the second time
         processor.process()
@@ -363,7 +361,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=self.test_report,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
 
         # Process for the first time
@@ -386,7 +384,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=tmp_file,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
         processor._batch_size = 2
         # Process for the second time
@@ -423,7 +421,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=self.test_report,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
 
         # Process for the first time
@@ -439,7 +437,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=tmp_file,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
         # Process for the second time
         processor.process()
@@ -451,7 +449,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=tmp_file,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
         # Process for the third time to make sure the timestamp is the same
         processor.process()
@@ -934,7 +932,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=tmp_file,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
 
         result = processor._check_for_finalized_bill()
@@ -948,7 +946,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=self.test_report,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
 
         result = processor._check_for_finalized_bill()
@@ -961,7 +959,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=self.test_report,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
             manifest_id=self.manifest.id,
         )
         processor.process()
@@ -981,7 +979,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=self.test_report,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
             manifest_id=self.manifest.id,
         )
         processor.process()
@@ -998,7 +996,7 @@ class AWSReportProcessorTest(MasuTestCase):
             schema_name='acct10001',
             report_path=self.test_report,
             compression=UNCOMPRESSED,
-            provider_id=1,
+            provider_id=self.aws_provider.id,
         )
         processor.process()
         result = processor._delete_line_items()

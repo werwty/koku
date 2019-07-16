@@ -16,7 +16,7 @@
 #
 
 """Test the AWSReportDBAccessor utility object."""
-import psycopg2
+from tenant_schemas.utils import schema_context
 
 from masu.database import AWS_CUR_TABLE_MAP
 from masu.database.aws_report_db_accessor import AWSReportDBAccessor
@@ -26,13 +26,12 @@ from masu.database.provider_db_accessor import ProviderDBAccessor
 from masu.external.date_accessor import DateAccessor
 from masu.processor.aws.aws_report_charge_updater import (
     AWSReportChargeUpdater,
-    AWSReportChargeUpdaterError,
 )
-from tests import MasuTestCase
-from tests.database.helpers import ReportObjectCreator
+from masu.test import MasuTransactionTestCase
+from masu.test.database.helpers import ReportObjectCreator
 
 
-class AWSReportChargeUpdaterTest(MasuTestCase):
+class AWSReportChargeUpdaterTest(MasuTransactionTestCase):
     """Test Cases for the AWSReportChargeUpdater object."""
 
     @classmethod
@@ -45,7 +44,6 @@ class AWSReportChargeUpdaterTest(MasuTestCase):
         cls.accessor = AWSReportDBAccessor('acct10001', cls.column_map)
 
         cls.report_schema = cls.accessor.report_schema
-        cls.session = cls.accessor._session
 
         cls.all_tables = list(AWS_CUR_TABLE_MAP.values())
 
@@ -67,17 +65,11 @@ class AWSReportChargeUpdaterTest(MasuTestCase):
     def tearDownClass(cls):
         """Tear down the test class."""
         cls.manifest_accessor.close_session()
-        cls.accessor.close_connections()
-        cls.accessor.close_session()
         super().tearDownClass()
 
     def setUp(self):
         """Set up each test."""
         super().setUp()
-        if self.accessor._conn.closed:
-            self.accessor._conn = self.accessor._db.connect()
-        if self.accessor._pg2_conn.closed:
-            self.accessor._pg2_conn = self.accessor._get_psycopg2_connection()
         if self.accessor._cursor.closed:
             self.accessor._cursor = self.accessor._get_psycopg2_cursor()
 
@@ -89,7 +81,7 @@ class AWSReportChargeUpdaterTest(MasuTestCase):
             provider_uuid=self.aws_test_provider_uuid
         )
         self.updater = AWSReportChargeUpdater(
-            schema=self.test_schema,
+            schema=self.schema,
             provider_uuid=self.aws_test_provider_uuid,
             provider_id=provider_id,
         )
@@ -114,16 +106,16 @@ class AWSReportChargeUpdaterTest(MasuTestCase):
         super().tearDown()
         # self.session.rollback()
 
-        for table_name in self.all_tables:
-            tables = self.accessor._get_db_obj_query(table_name).all()
-            for table in tables:
-                self.accessor._session.delete(table)
-        self.accessor.commit()
+        #for table_name in self.all_tables:
+            #tables = self.accessor._get_db_obj_query(table_name).all()
+            #for table in tables:
+            #    self.accessor._session.delete(table)
+        #self.accessor.commit()
 
-        manifests = self.manifest_accessor._get_db_obj_query().all()
-        for manifest in manifests:
-            self.manifest_accessor.delete(manifest)
-        self.manifest_accessor.commit()
+        #manifests = self.manifest_accessor._get_db_obj_query().all()
+        #for manifest in manifests:
+        #    self.manifest_accessor.delete(manifest)
+        #self.manifest_accessor.commit()
 
     def test_update_summary_charge_info(self):
         """Test to verify AWS derived cost summary is calculated."""

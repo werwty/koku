@@ -254,7 +254,7 @@ class AWSReportProcessor(ReportProcessorBase):
 
         with AWSReportDBAccessor(self._schema_name, self.column_map) as accessor:
             bills = accessor.get_cost_entry_bills_query_by_provider(provider_id)
-            bills = bills.filter_by(billing_period_start=bill_date).all()
+            bills = bills.filter(billing_period_start=bill_date).all()
             for bill in bills:
                 line_item_query = accessor.get_lineitem_query_for_billid(bill.id)
                 line_item_query.delete()
