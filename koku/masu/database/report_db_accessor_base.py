@@ -281,7 +281,10 @@ class ReportDBAccessorBase(KokuDBAccess):
         columns_formatted = ', '.join(str(value) for value in data.keys())
         data_formatted = self._format_data_for_db_insertion(data)
 
-        insert_sql = f"""INSERT INTO {table_name}({columns_formatted}) VALUES({data_formatted})"""
+        if columns_formatted:
+            insert_sql = f"""INSERT INTO {table_name}({columns_formatted}) VALUES({data_formatted})"""
+        else:
+            insert_sql = f"""INSERT INTO {table_name} VALUES({data_formatted})"""
 
         if conflict_columns:
             conflict_columns_formatted = ', '.join(conflict_columns)

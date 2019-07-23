@@ -19,15 +19,22 @@
 import datetime
 from unittest.mock import patch, Mock
 
+from tenant_schemas.utils import schema_context
+
 from masu.database.provider_db_accessor import ProviderDBAccessor
 from masu.external.date_accessor import DateAccessor
 from masu.processor.ocp.ocp_cloud_summary_updater import OCPCloudReportSummaryUpdater
+from masu.test import MasuTransactionTestCase
 
-from tests import MasuTestCase
 
-
-class OCPCloudReportSummaryUpdaterTest(MasuTestCase):
+class OCPCloudReportSummaryUpdaterTest(MasuTransactionTestCase):
     """Test cases for the OCPCloudReportSummaryUpdaterTest class."""
+
+
+    def run(self, result=None):
+        """Run the tests in the correct schema context."""
+        with schema_context('acct10001'):
+            super().run(result)
 
     @classmethod
     def setUpClass(cls):

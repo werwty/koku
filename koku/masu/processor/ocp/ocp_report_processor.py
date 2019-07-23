@@ -222,7 +222,6 @@ class OCPReportProcessorBase(ReportProcessorBase):
 
         """
         column_map = self.column_map[table_name]
-
         return {column_map[key]: value
                 for key, value in row.items()
                 if key in column_map}
@@ -388,6 +387,7 @@ class OCPReportProcessorBase(ReportProcessorBase):
                 for row in reader:
                     report_period_id = self._create_report_period(row, self._cluster_id, report_db)
                     report_id = self._create_report(row, report_period_id, report_db)
+
                     self._create_usage_report_line_item(row, report_period_id, report_id, report_db)
 
                     if len(self.processed_report.line_items) >= self._batch_size:

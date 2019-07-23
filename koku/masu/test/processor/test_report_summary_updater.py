@@ -21,14 +21,6 @@ import datetime
 import uuid
 from unittest.mock import patch
 
-import pytz
-
-from masu.external import (
-    AMAZON_WEB_SERVICES,
-    AWS_LOCAL_SERVICE_PROVIDER,
-    OPENSHIFT_CONTAINER_PLATFORM,
-    OCP_LOCAL_SERVICE_PROVIDER,
-)
 from masu.database.report_manifest_db_accessor import ReportManifestDBAccessor
 from masu.external.date_accessor import DateAccessor
 from masu.processor.aws.aws_report_summary_updater import AWSReportSummaryUpdater
@@ -37,7 +29,7 @@ from masu.processor.report_summary_updater import (
     ReportSummaryUpdater,
     ReportSummaryUpdaterError,
 )
-from tests import MasuTestCase
+from masu.test import MasuTestCase
 
 
 class ReportSummaryUpdaterTest(MasuTestCase):

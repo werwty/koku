@@ -96,7 +96,7 @@ class AWSReportChargeUpdaterTest(MasuTransactionTestCase):
         )
 
         self.manifest = self.manifest_accessor.add(**self.manifest_dict)
-        self.manifest_accessor.commit()
+        #self.manifest_accessor.commit()
 
         with ProviderDBAccessor(self.aws_test_provider_uuid) as provider_accessor:
             self.provider = provider_accessor.get_provider()

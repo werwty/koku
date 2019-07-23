@@ -50,7 +50,6 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
         cls.accessor = AWSReportDBAccessor('acct10001', cls.column_map)
 
         cls.report_schema = cls.accessor.report_schema
-        cls.session = cls.accessor._session
 
         cls.all_tables = list(AWS_CUR_TABLE_MAP.values())
 
@@ -59,13 +58,7 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
         )
 
         cls.date_accessor = DateAccessor()
-        billing_start = cls.date_accessor.today_with_timezone('UTC').replace(day=1)
-        cls.manifest_dict = {
-            'assembly_id': '1234',
-            'billing_period_start_datetime': billing_start,
-            'num_total_files': 2,
-            'provider_id': 1,
-        }
+
         cls.manifest_accessor = ReportManifestDBAccessor()
 
     @classmethod
@@ -79,56 +72,56 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
     def setUp(self):
         """Set up each test."""
         super().setUp()
-        if self.accessor._conn.closed:
-            self.accessor._conn = self.accessor._db.connect()
-        if self.accessor._pg2_conn.closed:
-            self.accessor._pg2_conn = self.accessor._get_psycopg2_connection()
+        #if self.accessor._conn.closed:
+        #    self.accessor._conn = self.accessor._db.connect()
+        #if self.accessor._pg2_conn.closed:
+        #    self.accessor._pg2_conn = self.accessor._get_psycopg2_connection()
         if self.accessor._cursor.closed:
             self.accessor._cursor = self.accessor._get_psycopg2_cursor()
+        billing_start = self.date_accessor.today_with_timezone('UTC').replace(day=1)
+
+        self.manifest_dict = {
+            'assembly_id': '1234',
+            'billing_period_start_datetime': billing_start,
+            'num_total_files': 2,
+            'provider_id': self.aws_provider.id,
+        }
 
         today = DateAccessor().today_with_timezone('UTC')
-        bill = self.creator.create_cost_entry_bill(today)
-        cost_entry = self.creator.create_cost_entry(bill, today)
-        product = self.creator.create_cost_entry_product()
-        pricing = self.creator.create_cost_entry_pricing()
-        reservation = self.creator.create_cost_entry_reservation()
-        self.creator.create_cost_entry_line_item(
-            bill, cost_entry, product, pricing, reservation
+        self.bill = self.creator.create_cost_entry_bill(today)
+        self.cost_entry = self.creator.create_cost_entry(self.bill, today)
+        self.product = self.creator.create_cost_entry_product()
+        self.pricing = self.creator.create_cost_entry_pricing()
+        self.reservation = self.creator.create_cost_entry_reservation()
+        self.cost_entry_line_item = self.creator.create_cost_entry_line_item(
+            self.bill, self.cost_entry, self.product, self.pricing, self.reservation
         )
 
         self.manifest = self.manifest_accessor.add(**self.manifest_dict)
         self.manifest_accessor.commit()
 
-        with ProviderDBAccessor(self.aws_test_provider_uuid) as provider_accessor:
-            self.provider = provider_accessor.get_provider()
-
         self.updater = AWSReportSummaryUpdater(
-            'acct10001', self.provider, self.manifest
+            'acct10001', self.aws_provider, self.manifest
         )
 
     def tearDown(self):
         """Return the database to a pre-test state."""
         super().tearDown()
-        # self.session.rollback()
+        self.cost_entry_line_item.delete()
+        self.reservation.delete()
+        self.pricing.delete()
+        self.product.delete()
+        self.cost_entry.delete()
+        self.bill.delete()
 
-        for table_name in self.all_tables:
-            tables = self.accessor._get_db_obj_query(table_name).all()
-            for table in tables:
-                self.accessor._session.delete(table)
-        self.accessor.commit()
-
-        manifests = self.manifest_accessor._get_db_obj_query().all()
-        for manifest in manifests:
-            self.manifest_accessor.delete(manifest)
-        self.manifest_accessor.commit()
-
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_summary_table'
     )
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_table'
     )
-    def test_update_summary_tables_with_manifest(self, mock_daily, mock_summary):
+    def test_update_summary_tables_with_manifest(self, mock_daily, mock_summary, mock_vacuum):
         """Test that summary tables are properly run."""
         self.manifest.num_processed_files = self.manifest.num_total_files
         self.manifest_accessor.commit()
@@ -144,8 +137,9 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
         start_date_str = start_date.strftime('%Y-%m-%d')
         end_date_str = end_date.strftime('%Y-%m-%d')
 
-        expected_start_date = start_date.strftime('%Y-%m-%d')
-        expected_end_date = end_date.strftime('%Y-%m-%d')
+        last_day_of_month = calendar.monthrange(bill_date.year, bill_date.month)[1]
+        expected_start_date = start_date.replace(day=1).strftime('%Y-%m-%d')
+        expected_end_date = end_date.replace(day=last_day_of_month).strftime('%Y-%m-%d')
 
         self.assertIsNone(bill.summary_data_updated_datetime)
 
@@ -165,13 +159,14 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
             self.assertIsNotNone(bill.summary_data_creation_datetime)
             self.assertIsNotNone(bill.summary_data_updated_datetime)
 
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_summary_table'
     )
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_table'
     )
-    def test_update_summary_tables_new_bill(self, mock_daily, mock_summary):
+    def test_update_summary_tables_new_bill(self, mock_daily, mock_summary, mock_vacuum):
         """Test that summary tables are run for a full month."""
 
         self.manifest.num_processed_files = self.manifest.num_total_files
@@ -211,13 +206,14 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
             self.assertIsNotNone(bill.summary_data_creation_datetime)
             self.assertIsNotNone(bill.summary_data_updated_datetime)
 
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_summary_table'
     )
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_table'
     )
-    def test_update_summary_tables_new_bill_last_month(self, mock_daily, mock_summary):
+    def test_update_summary_tables_new_bill_last_month(self, mock_daily, mock_summary, mock_vacuum):
         """Test that summary tables are run for the month of the manifest."""
         billing_start = self.date_accessor.today_with_timezone('UTC').replace(
             day=1
@@ -226,9 +222,9 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
             'assembly_id': '1234',
             'billing_period_start_datetime': billing_start,
             'num_total_files': 2,
-            'provider_id': 1,
+            'provider_id': self.aws_provider.id,
         }
-        self.manifest_accessor.delete(self.manifest)
+        #self.manifest_accessor.delete(self.manifest)
         self.manifest_accessor.commit()
 
         self.manifest = self.manifest_accessor.add(**manifest_dict)
@@ -238,14 +234,14 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
         self.manifest_accessor.commit()
 
         self.updater = AWSReportSummaryUpdater(
-            'acct10001', self.provider, self.manifest
+            'acct10001', self.aws_provider, self.manifest
         )
 
         start_date = self.date_accessor.today_with_timezone('UTC')
         end_date = start_date + datetime.timedelta(days=1)
         bill_date = billing_start.date()
         self.creator.create_cost_entry_bill(
-            bill_date=billing_start, provider_id=self.provider.id
+            bill_date=billing_start, provider_id=self.aws_provider.id
         )
         bill = self.accessor.get_cost_entry_bills_by_date(bill_date)[0]
 
@@ -278,6 +274,7 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
             self.assertIsNotNone(bill.summary_data_creation_datetime)
             self.assertIsNotNone(bill.summary_data_updated_datetime)
 
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_summary_table'
     )
@@ -285,7 +282,7 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_table'
     )
     def test_update_summary_tables_new_bill_not_done_processing(
-        self, mock_daily, mock_summary
+        self, mock_daily, mock_summary, mock_vacuum
     ):
         """Test that summary tables are not run for a full month."""
 
@@ -319,13 +316,14 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
             self.assertIsNotNone(bill.summary_data_creation_datetime)
             self.assertIsNotNone(bill.summary_data_updated_datetime)
 
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_summary_table'
     )
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_table'
     )
-    def test_update_summary_tables_finalized_bill(self, mock_daily, mock_summary):
+    def test_update_summary_tables_finalized_bill(self, mock_daily, mock_summary, mock_vacuum):
         """Test that summary tables are run for a full month."""
         self.manifest.num_processed_files = self.manifest.num_total_files
         manifest_id = self.manifest.id
@@ -366,6 +364,7 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
             self.assertIsNotNone(bill.summary_data_creation_datetime)
             self.assertIsNotNone(bill.summary_data_updated_datetime)
 
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_summary_table'
     )
@@ -373,7 +372,7 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_table'
     )
     def test_update_summary_tables_finalized_bill_not_done_proc(
-        self, mock_daily, mock_summary
+        self, mock_daily, mock_summary, mock_vacuum
     ):
         """Test that summary tables are run for a full month."""
         report_updater_base = ReportSummaryUpdater(
@@ -386,6 +385,7 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
 
         bill = self.accessor.get_cost_entry_bills_by_date(bill_date)[0]
         bill.finalized_datetime = start_date
+        bill.save()
         self.accessor.commit()
 
         start_date_str = start_date.strftime('%Y-%m-%d')
@@ -407,15 +407,16 @@ class AWSReportSummaryUpdaterTest(MasuTransactionTestCase):
             self.assertIsNotNone(bill.summary_data_creation_datetime)
             self.assertIsNotNone(bill.summary_data_updated_datetime)
 
+    @patch('masu.database.aws_report_db_accessor.AWSReportDBAccessor.vacuum_table')
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_summary_table'
     )
     @patch(
         'masu.processor.aws.aws_report_summary_updater.AWSReportDBAccessor.populate_line_item_daily_table'
     )
-    def test_update_summary_tables_without_manifest(self, mock_daily, mock_summary):
+    def test_update_summary_tables_without_manifest(self, mock_daily, mock_summary, mock_vacuum):
         """Test that summary tables are properly run without a manifest."""
-        self.updater = AWSReportSummaryUpdater('acct10001', self.provider, None)
+        self.updater = AWSReportSummaryUpdater('acct10001', self.aws_provider, None)
 
         start_date = DateAccessor().today_with_timezone('UTC')
         end_date = start_date + datetime.timedelta(days=1)

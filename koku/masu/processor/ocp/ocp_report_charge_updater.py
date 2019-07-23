@@ -272,4 +272,5 @@ class OCPReportChargeUpdater:
             report_periods = accessor.report_periods_for_provider_id(self._provider_id, start_date)
             for period in report_periods:
                 period.derived_cost_datetime = DateAccessor().today_with_timezone('UTC')
+                period.save()
             accessor.commit()

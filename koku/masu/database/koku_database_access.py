@@ -38,18 +38,25 @@ class KokuDBAccess:
         self.schema = schema
         self._savepoint = None
 
-    def __enter__(self):
+    def __enter__(self, set_transaction=False):
         """Context manager entry."""
         self._savepoint = transaction.savepoint()
+        if set_transaction:
+            transaction.set_autocommit(False)
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
         """Context manager close session."""
         with schema_context(self.schema):
             if exception_type:
+                #transaction.rollback()
                 transaction.savepoint_rollback(self._savepoint)
             else:
                 transaction.savepoint_commit(self._savepoint)
+            #    transaction.commit()
+            #else:
+            #    transaction.commit()
+        #transaction.set_autocommit(True)
 
     # pylint: disable=no-self-use
     def close_session(self):

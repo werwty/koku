@@ -19,21 +19,16 @@
 
 from unittest.mock import patch
 
-from masu.external import (
-    AMAZON_WEB_SERVICES,
-    OPENSHIFT_CONTAINER_PLATFORM,
-    OCP_LOCAL_SERVICE_PROVIDER,
-)
 from masu.processor.aws.aws_report_charge_updater import AWSReportChargeUpdater
 from masu.processor.ocp.ocp_report_charge_updater import OCPReportChargeUpdater
 from masu.processor.report_charge_updater import (
     ReportChargeUpdater,
     ReportChargeUpdaterError,
 )
-from tests import MasuTestCase
+from masu.test import MasuTransactionTestCase
 
 
-class ReportChargeUpdaterTest(MasuTestCase):
+class ReportChargeUpdaterTest(MasuTransactionTestCase):
     """Test class for the report summary updater."""
 
     @classmethod

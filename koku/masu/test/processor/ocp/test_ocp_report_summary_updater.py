@@ -29,13 +29,12 @@ from masu.database.report_manifest_db_accessor import ReportManifestDBAccessor
 from masu.database.reporting_common_db_accessor import ReportingCommonDBAccessor
 from masu.external.date_accessor import DateAccessor
 from masu.processor.ocp.ocp_report_summary_updater import OCPReportSummaryUpdater
-from masu.processor.report_summary_updater import ReportSummaryUpdater
 
-from tests import MasuTestCase
-from tests.database.helpers import ReportObjectCreator
+from masu.test import MasuTransactionTestCase
+from masu.test.database.helpers import ReportObjectCreator
 
 
-class OCPReportSummaryUpdaterTest(MasuTestCase):
+class OCPReportSummaryUpdaterTest(MasuTransactionTestCase):
     """Test cases for the OCPReportSummaryUpdater class."""
 
     @classmethod
@@ -47,7 +46,6 @@ class OCPReportSummaryUpdaterTest(MasuTestCase):
 
         cls.accessor = OCPReportDBAccessor('acct10001', cls.column_map)
         cls.report_schema = cls.accessor.report_schema
-        cls.session = cls.accessor._session
 
         cls.all_tables = list(OCP_REPORT_TABLE_MAP.values())
 
@@ -77,10 +75,6 @@ class OCPReportSummaryUpdaterTest(MasuTestCase):
     def setUp(self):
         """Set up each test."""
         super().setUp()
-        if self.accessor._conn.closed:
-            self.accessor._conn = self.accessor._db.connect()
-        if self.accessor._pg2_conn.closed:
-            self.accessor._pg2_conn = self.accessor._get_psycopg2_connection()
         if self.accessor._cursor.closed:
             self.accessor._cursor = self.accessor._get_psycopg2_cursor()
 
@@ -101,21 +95,6 @@ class OCPReportSummaryUpdaterTest(MasuTestCase):
         self.updater = OCPReportSummaryUpdater(
             'acct10001', self.provider, self.manifest
         )
-
-    def tearDown(self):
-        """Return the database to a pre-test state."""
-        super().tearDown()
-
-        for table_name in self.all_tables:
-            tables = self.accessor._get_db_obj_query(table_name).all()
-            for table in tables:
-                self.accessor._session.delete(table)
-        self.accessor.commit()
-
-        manifests = self.manifest_accessor._get_db_obj_query().all()
-        for manifest in manifests:
-            self.manifest_accessor.delete(manifest)
-        self.manifest_accessor.commit()
 
     @patch(
         'masu.processor.ocp.ocp_report_summary_updater.OCPReportDBAccessor.populate_storage_line_item_daily_summary_table'

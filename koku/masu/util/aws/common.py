@@ -230,9 +230,9 @@ def get_bills_from_provider(provider_uuid, schema, start_date=None, end_date=Non
         bill_obj = getattr(report_accessor.report_schema, bill_table_name)
         bills = report_accessor.get_cost_entry_bills_query_by_provider(provider.id)
         if start_date:
-            bills = bills.filter(bill_obj.billing_period_start >= start_date)
+            bills = bills.filter(billing_period_start__gte=start_date)
         if end_date:
-            bills = bills.filter(bill_obj.billing_period_start <= end_date)
+            bills = bills.filter(billing_period_start__lte=end_date)
         bills = bills.all()
 
     return bills

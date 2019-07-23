@@ -23,7 +23,7 @@ import random
 import uuid
 from decimal import Decimal
 
-from dateutil import relativedelta
+from dateutil import parser, relativedelta
 from faker import Faker
 from tenant_schemas.utils import schema_context
 
@@ -182,6 +182,8 @@ class ReportObjectCreator:
             start_datetime = report_datetime
         else:
             start_datetime = self.fake.past_datetime(start_date='-60d')
+        if isinstance(start_datetime, str):
+            start_datetime = parser.parse(start_datetime)
         data['interval_start'] = start_datetime
         data['interval_end'] = start_datetime + relativedelta.relativedelta(hours=+1)
         row = self.db_accessor.create_db_object(table_name, data)

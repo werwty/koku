@@ -19,9 +19,6 @@
 from dateutil.relativedelta import relativedelta
 from unittest.mock import patch
 from decimal import Decimal
-import uuid
-
-import psycopg2
 
 from masu.database import OCP_REPORT_TABLE_MAP
 from masu.database.ocp_report_db_accessor import OCPReportDBAccessor
@@ -32,11 +29,11 @@ from masu.processor.ocp.ocp_report_charge_updater import (
     OCPReportChargeUpdater,
     OCPReportChargeUpdaterError,
 )
-from tests import MasuTestCase
-from tests.database.helpers import ReportObjectCreator
+from masu.test import MasuTransactionTestCase
+from masu.test.database.helpers import ReportObjectCreator
 
 
-class OCPReportChargeUpdaterTest(MasuTestCase):
+class OCPReportChargeUpdaterTest(MasuTransactionTestCase):
     """Test Cases for the OCPReportChargeUpdater object."""
 
     @classmethod
@@ -63,10 +60,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
     def setUp(self):
         """'Set up a test with database objects."""
         super().setUp()
-        if self.accessor._conn.closed:
-            self.accessor._conn = self.accessor._db.connect()
-        if self.accessor._pg2_conn.closed:
-            self.accessor._pg2_conn = self.accessor._get_psycopg2_connection()
+
         if self.accessor._cursor.closed:
             self.accessor._cursor = self.accessor._get_psycopg2_cursor()
         provider_id = self.provider_accessor.get_provider().id
@@ -80,21 +74,28 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
             reporting_period, reporting_period.report_period_start
         )
         self.updater = OCPReportChargeUpdater(
-            schema=self.test_schema,
+            schema=self.schema,
             provider_uuid=self.ocp_provider_uuid,
             provider_id=provider_id,
         )
+
+        today = DateAccessor().today_with_timezone('UTC')
+        self.bill_id = self.creator.create_cost_entry_bill(today)
+        self.cost_entry_id = self.creator.create_cost_entry(self.bill_id)
+        self.product_id = self.creator.create_cost_entry_product()
+        self.pricing_id = self.creator.create_cost_entry_pricing()
+        self.reservation_id = self.creator.create_cost_entry_reservation()
+        self.cost_entry_line_item = self.creator.create_cost_entry_line_item(
+            self.bill_id, self.cost_entry_id, self.product_id, self.pricing_id, self.reservation_id
+        )
+
+
         self.creator.create_ocp_usage_line_item(reporting_period, report)
         self.creator.create_ocp_storage_line_item(reporting_period, report)
 
     def tearDown(self):
         """Return the database to a pre-test state."""
-        self.accessor._session.rollback()
-
-        for table_name in self.all_tables:
-            tables = self.accessor._get_db_obj_query(table_name).all()
-            for table in tables:
-                self.accessor._session.delete(table)
+        pass;
 
     def test_normalize_tier(self):
         """Test the tier helper function to normalize rate tier."""
@@ -455,6 +456,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
                 round(float(calculated_charge), 1), entry.get('expected_charge')
             )
 
+    @patch('masu.database.ocp_report_db_accessor.OCPReportDBAccessor.vacuum_table')
     @patch(
         'masu.database.ocp_rate_db_accessor.OCPRateDBAccessor.get_cpu_core_request_per_hour_rates'
     )
@@ -473,6 +475,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
         mock_db_mem_request_rate,
         mock_db_cpu_usage_rate,
         mock_db_cpu_request_rate,
+        mock_vacuum
     ):
         """Test that OCP charge information is updated for cpu and memory."""
         mem_rate_usage = {'tiered_rate': [{'value': '100', 'unit': 'USD'}]}
@@ -530,6 +533,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
                 round(cpu_charge, 6), round(float(item.pod_charge_cpu_core_hours), 6)
             )
 
+    @patch('masu.database.ocp_report_db_accessor.OCPReportDBAccessor.vacuum_table')
     @patch(
         'masu.database.ocp_rate_db_accessor.OCPRateDBAccessor.get_cpu_core_usage_per_hour_rates'
     )
@@ -537,7 +541,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
         'masu.database.ocp_rate_db_accessor.OCPRateDBAccessor.get_memory_gb_usage_per_hour_rates'
     )
     def test_update_summary_charge_info_cpu(
-        self, mock_db_mem_usage_rate, mock_db_cpu_usage_rate
+        self, mock_db_mem_usage_rate, mock_db_cpu_usage_rate, mock_vacuum
     ):
         """Test that OCP charge information is updated for cpu."""
         mem_rate = None
@@ -574,6 +578,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
                 round(float(item.pod_charge_cpu_core_hours), 6),
             )
 
+    @patch('masu.database.ocp_report_db_accessor.OCPReportDBAccessor.vacuum_table')
     @patch(
         'masu.database.ocp_rate_db_accessor.OCPRateDBAccessor.get_cpu_core_usage_per_hour_rates'
     )
@@ -581,7 +586,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
         'masu.database.ocp_rate_db_accessor.OCPRateDBAccessor.get_memory_gb_usage_per_hour_rates'
     )
     def test_update_summary_charge_info_mem(
-        self, mock_db_mem_usage_rate, mock_db_cpu_usage_rate
+        self, mock_db_mem_usage_rate, mock_db_cpu_usage_rate, mock_vacuum
     ):
         """Test that OCP charge information is updated for cpu and memory."""
         mem_rate = {'tiered_rate': [{'value': '100', 'unit': 'USD'}]}
@@ -618,6 +623,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
                 round(0.0, 6), round(float(item.pod_charge_cpu_core_hours), 6)
             )
 
+    @patch('masu.database.ocp_report_db_accessor.OCPReportDBAccessor.vacuum_table')
     @patch(
         'masu.database.ocp_rate_db_accessor.OCPRateDBAccessor.get_storage_gb_request_per_month_rates'
     )
@@ -625,7 +631,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
         'masu.database.ocp_rate_db_accessor.OCPRateDBAccessor.get_storage_gb_usage_per_month_rates'
     )
     def test_update_summary_storage_charge(
-        self, mock_db_storage_usage_rate, mock_db_storage_request_rate
+        self, mock_db_storage_usage_rate, mock_db_storage_request_rate, mock_vacuum
     ):
         """Test that OCP charge information is updated for storage."""
         usage_rate = {'tiered_rate': [{'value': '100', 'unit': 'USD'}]}
@@ -672,6 +678,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
                 round(expected_usage_charge + expected_request_charge, 6),
             )
 
+    @patch('masu.database.ocp_report_db_accessor.OCPReportDBAccessor.vacuum_table')
     @patch(
         'masu.database.ocp_rate_db_accessor.OCPRateDBAccessor.get_cpu_core_usage_per_hour_rates'
     )
@@ -679,7 +686,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
         'masu.database.ocp_rate_db_accessor.OCPRateDBAccessor.get_memory_gb_usage_per_hour_rates'
     )
     def test_update_summary_charge_info_mem_cpu_malformed_mem(
-        self, mock_db_mem_usage_rate, mock_db_cpu_usage_rate
+        self, mock_db_mem_usage_rate, mock_db_cpu_usage_rate, mock_vacuum
     ):
         """Test that OCP charge information is updated for cpu and memory with malformed memory rates."""
         mem_rate = {
@@ -741,6 +748,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
             # self.assertEqual(round(cpu_usage_value*cpu_rate_value, 6),
             #                  round(float(item.pod_charge_cpu_core_hours), 6))
 
+    @patch('masu.database.ocp_report_db_accessor.OCPReportDBAccessor.vacuum_table')
     @patch(
         'masu.database.ocp_rate_db_accessor.OCPRateDBAccessor.get_cpu_core_usage_per_hour_rates'
     )
@@ -748,7 +756,7 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
         'masu.database.ocp_rate_db_accessor.OCPRateDBAccessor.get_memory_gb_usage_per_hour_rates'
     )
     def test_update_summary_charge_info_mem_cpu_malformed_cpu(
-        self, mock_db_mem_usage_rate, mock_db_cpu_usage_rate
+        self, mock_db_mem_usage_rate, mock_db_cpu_usage_rate, mock_vacuum
     ):
         """Test that OCP charge information is updated for cpu and memory with malformed cpu rates."""
         mem_rate = {'tiered_rate': [{'value': '100', 'unit': 'USD'}]}
@@ -804,7 +812,8 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
             self.assertIsNone(item.pod_charge_cpu_core_hours)
             self.assertIsNone(item.pod_charge_memory_gigabyte_hours)
 
-    def test_update_summary_charge_info_cpu_real_rates(self):
+    @patch('masu.database.ocp_report_db_accessor.OCPReportDBAccessor.vacuum_table')
+    def test_update_summary_charge_info_cpu_real_rates(self, mock_vacuum):
         """Test that OCP charge information is updated for cpu from the right provider uuid."""
         cpu_usage_rate = {
             'metric': 'cpu_core_usage_per_hour',
@@ -835,13 +844,14 @@ class OCPReportChargeUpdaterTest(MasuTestCase):
             start_date, end_date, self.cluster_id
         )
         self.accessor.populate_cost_summary_table(self.cluster_id, start_date, end_date)
-        self.updater.update_summary_charge_info()
 
+        self.updater.update_summary_charge_info()
         with OCPReportDBAccessor(
             schema='acct10001', column_map=self.column_map
         ) as accessor:
             self.assertIsNotNone(
-                accessor.get_current_usage_period().derived_cost_datetime
+                accessor.get_usage_period_query_by_provider(self.ocp_provider.id).order_by('-report_period_start')\
+            .first().derived_cost_datetime
             )
         table_name = OCP_REPORT_TABLE_MAP['line_item_daily_summary']
 
