@@ -6,6 +6,7 @@ from rest_framework.permissions import AllowAny
 from api.dataexport.models import DataExportRequest
 from api.dataexport.serializers import DataExportRequestSerializer
 
+from koku.schema import KokuPaginatedSchema
 
 class DataExportRequestViewSet(
     mixins.CreateModelMixin,
@@ -19,6 +20,7 @@ class DataExportRequestViewSet(
     serializer_class = DataExportRequestSerializer
     permission_classes = (AllowAny,)
     lookup_field = 'uuid'
+    schema = KokuPaginatedSchema()
 
     def get_queryset(self):
         """Get a queryset that only displays the user's data export requests."""
